@@ -8,24 +8,44 @@ export default function AuthCallbackPage() {
   const { supabase, session } = useAuth()
   const router = useRouter()
   const [error, setError] = useState<string | null>(null)
+  const didRunRef = React.useRef(false)
 
   useEffect(() => {
     if (!supabase) return
+    if (didRunRef.current) return
+    didRunRef.current = true
+
+    // If session already exists, go home
     if (session) {
       router.replace('/')
       return
     }
+
+    // Only attempt exchange when the URL contains auth params
+    const href = typeof window !== 'undefined' ? window.location.href : ''
+    const url = typeof window !== 'undefined' ? new URL(window.location.href) : null
+    const hasCode = url?.searchParams.get('code')
+    const hashParams = typeof window !== 'undefined' && window.location.hash
+      ? new URLSearchParams(window.location.hash.slice(1))
+      : null
+    const hasAccessToken = hashParams?.get('access_token')
+
+    if (!hasCode && !hasAccessToken) {
+      // Missing auth parameters -> go to login
+      router.replace('/login')
+      return
+    }
+
     const run = async () => {
       try {
-        // Let supabase-js parse the code/hash from the current URL and exchange for a session
-        const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(window.location.href)
+        const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(href)
         if (exchangeError) throw exchangeError
         router.replace('/')
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : 'Authentication failed'
         setError(msg)
-        // Fallback to login after brief delay
-        setTimeout(() => router.replace('/login'), 1200)
+        // Directly go to login if exchange fails (avoid delayed flicker)
+        router.replace('/login')
       }
     }
     void run()

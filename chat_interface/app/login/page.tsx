@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { useAuth } from '../supabase/SupabaseAuthProvider'
 import { Github } from 'lucide-react'
 
@@ -21,30 +22,54 @@ export default function LoginPage() {
     <div style={{
       minHeight: '100vh',
       display: 'flex',
+      flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: '#0a0a0a',
       color: '#ddd',
-      padding: 24
+      padding: 24,
+      fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace'
     }}>
+      {/* Back to home link */}
+      <Link 
+        href="/" 
+        style={{
+          position: 'absolute',
+          top: 24,
+          left: 24,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          color: '#666',
+          fontSize: 12,
+          textDecoration: 'none',
+          transition: 'color 150ms ease'
+        }}
+        onMouseEnter={(e) => { e.currentTarget.style.color = '#e5e5e5' }}
+        onMouseLeave={(e) => { e.currentTarget.style.color = '#666' }}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M19 12H5M12 19l-7-7 7-7" />
+        </svg>
+        <span>Back to home</span>
+      </Link>
+
       <div style={{
         width: 360,
-        border: '1px solid #2a2a2a',
-        borderRadius: 12,
-        padding: 24,
-        background: 'linear-gradient(135deg, rgba(25,25,25,0.98) 0%, rgba(15,15,15,0.98) 100%)',
-        boxShadow: '0 12px 40px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.05)'
+        border: '2px solid #2a2a2a',
+        padding: 32,
+        background: '#0a0a0a'
       }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ textAlign: 'center', marginBottom: 20 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ textAlign: 'center', marginBottom: 24 }}>
             <img 
               src="/DWResearch.svg" 
               alt="Deep Wide Research" 
-              width={72} 
-              height={72} 
+              width={64} 
+              height={64} 
               style={{ opacity: 0.9, display: 'block', margin: '0 auto' }} 
             />
-            <div style={{ marginTop: 10, fontSize: 16, fontWeight: 500, color: '#999' }}>Sign in to Deep Wide Research</div>
+            <div style={{ marginTop: 16, fontSize: 14, fontWeight: 500, color: '#888', letterSpacing: '-0.01em' }}>Sign in to continue</div>
           </div>
 
           <button
@@ -62,17 +87,17 @@ export default function LoginPage() {
             }}
             style={btnStyle}
             onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'linear-gradient(135deg, rgba(35,35,35,0.95) 0%, rgba(25,25,25,0.95) 100%)'
-              e.currentTarget.style.borderColor = '#3a3a3a'
+              e.currentTarget.style.background = 'rgba(255,255,255,0.03)'
+              e.currentTarget.style.borderColor = '#444'
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'rgba(20,20,20,0.9)'
+              e.currentTarget.style.background = 'transparent'
               e.currentTarget.style.borderColor = '#2a2a2a'
             }}
           >
             <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
               <GoogleIcon />
-              <span>{loading === 'google' ? 'Redirecting…' : 'Continue with Google'}</span>
+              <span>{loading === 'google' ? 'Redirecting...' : 'Continue with Google'}</span>
             </span>
           </button>
 
@@ -91,25 +116,25 @@ export default function LoginPage() {
             }}
             style={btnStyle}
             onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'linear-gradient(135deg, rgba(35,35,35,0.95) 0%, rgba(25,25,25,0.95) 100%)'
-              e.currentTarget.style.borderColor = '#3a3a3a'
+              e.currentTarget.style.background = 'rgba(255,255,255,0.03)'
+              e.currentTarget.style.borderColor = '#444'
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'rgba(20,20,20,0.9)'
+              e.currentTarget.style.background = 'transparent'
               e.currentTarget.style.borderColor = '#2a2a2a'
             }}
           >
             <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-              <Github size={16} />
-              <span>{loading === 'github' ? 'Redirecting…' : 'Continue with GitHub'}</span>
+              <Github size={14} />
+              <span>{loading === 'github' ? 'Redirecting...' : 'Continue with GitHub'}</span>
             </span>
           </button>
 
           {error && (
-            <div style={{ color: '#f66', fontSize: 12, textAlign: 'center' }}>{error}</div>
+            <div style={{ color: '#ef4444', fontSize: 11, textAlign: 'center', fontFamily: 'inherit' }}>{error}</div>
           )}
 
-          <div style={{ fontSize: 12, color: '#888', textAlign: 'center', marginTop: 8 }}>
+          <div style={{ fontSize: 10, color: '#555', textAlign: 'center', marginTop: 16, lineHeight: 1.5 }}>
             By continuing you agree to our Terms and Privacy Policy.
           </div>
         </div>
@@ -120,13 +145,14 @@ export default function LoginPage() {
 
 const btnStyle: React.CSSProperties = {
   width: '100%',
-  padding: '8px 10px',
-  borderRadius: 8,
-  border: '1px solid #2a2a2a',
-  background: 'rgba(20,20,20,0.9)',
+  padding: '10px 12px',
+  border: '2px solid #2a2a2a',
+  background: 'transparent',
   color: '#e6e6e6',
   cursor: 'pointer',
-  fontSize: 14,
+  fontSize: 12,
+  fontFamily: 'inherit',
+  transition: 'all 150ms ease'
 }
 
 function GoogleIcon() {

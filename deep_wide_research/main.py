@@ -131,18 +131,16 @@ else:
     # Local development: always allow all origins (for convenience)
     allowed_origins = ["*"]
     allow_all_origins = True
-    print("💡 Tip: Running in development mode with CORS set to allow all origins (*)")
+    pass
     allowed_origin_regex = None
 
 # Print CORS configuration (for debugging)
-print("="*80)
-print("🔧 CORS Configuration:")
-print(f"   Environment: {'🌐 Production' if is_production else '💻 Development (Local)'}")
-print(f"   Allowed Origins: {allowed_origins}")
-print(f"   Allow All Origins: {'✅ Yes (*)' if allow_all_origins else '❌ No (Restricted)'}")
-print(f"   Allowed Origin Regex: {allowed_origin_regex or 'None'}")
-print(f"   Allow Credentials: {'✅ Yes' if not allow_all_origins else '❌ No (incompatible with *)'}")
-print("="*80)
+logger.info("CORS configured: env=%s allow_all=%s origins=%s regex=%s credentials=%s",
+            "prod" if is_production else "dev",
+            allow_all_origins,
+            allowed_origins,
+            allowed_origin_regex or "None",
+            not allow_all_origins)
 
 app.add_middleware(
     CORSMiddleware,
@@ -695,8 +693,10 @@ async def research_stream_generator(request: ResearchRequest):
         # Create configuration
         cfg = Configuration()
         
-        print(f"\n🔍 Received research request: {request.message.query}")
-        print(f"📊 Deep: {request.message.deepwide.deep}, Wide: {request.message.deepwide.wide}")
+        logger.info("research: query=%s deep=%s wide=%s",
+                    request.message.query,
+                    request.message.deepwide.deep,
+                    request.message.deepwide.wide)
         
         # Execute research and stream updates
         async for update in run_deep_research_stream(
@@ -752,10 +752,9 @@ async def research(request: ResearchRequest, req: Request):
             }
             _consume_credits(user_id=user_id, units=units, request_id=rid, meta=meta)
         except HTTPException as e:
-            # log and swallow to not break client
-            print(f"[consume_credits] HTTPException: {e.status_code} {e.detail}")
+            logger.warning("[consume_credits] HTTPException: %s %s", e.status_code, e.detail)
         except Exception as e:
-            print(f"[consume_credits] Error: {e}")
+            logger.warning("[consume_credits] Error: %s", e)
 
     response.background = None  # ensure streaming works; we'll await completion below
     # FastAPI doesn't expose on_complete hook for streams; best-effort: schedule task
@@ -804,12 +803,18 @@ class ListApiKeysResponse(BaseModel):
 @app.post("/api/keys", response_model=CreateApiKeyResponse)
 async def create_api_key(body: CreateApiKeyRequest, req: Request):
     # Only JWT-authenticated users can create keys
+    auth_header = req.headers.get("Authorization")
+    if not auth_header or not auth_header.lower().startswith("bearer "):
+        # Cloak endpoint for unauthenticated clients
+        from fastapi import Response
+        return Response(status_code=404)
     try:
-        user_id = _verify_supabase_jwt(req.headers.get("Authorization"))
+        user_id = _verify_supabase_jwt(auth_header)
         logger.info(f"Creating API key for user: {user_id}")
-    except Exception as e:
-        logger.error(f"JWT verification failed: {e}")
-        raise
+    except Exception:
+        # Avoid noisy logs on missing/invalid token; still cloak
+        from fastapi import Response
+        return Response(status_code=404)
 
     name = (body.name or "default").strip() or "default"
     expires_at_iso: Optional[str] = None
@@ -857,12 +862,18 @@ async def create_api_key(body: CreateApiKeyRequest, req: Request):
 @app.get("/api/keys", response_model=ListApiKeysResponse)
 async def list_api_keys(req: Request):
     # JWT required for listing
+    auth_header = req.headers.get("Authorization")
+    if not auth_header or not auth_header.lower().startswith("bearer "):
+        # Cloak endpoint for unauthenticated clients
+        from fastapi import Response
+        return Response(status_code=404)
     try:
-        user_id = _verify_supabase_jwt(req.headers.get("Authorization"))
+        user_id = _verify_supabase_jwt(auth_header)
         logger.info(f"Listing API keys for user: {user_id}")
-    except Exception as e:
-        logger.error(f"JWT verification failed: {e}")
-        raise
+    except Exception:
+        # Cloak on invalid tokens as well
+        from fastapi import Response
+        return Response(status_code=404)
     
     try:
         # Aggregate usage by api_key prefix (sum of negative deltas per prefix)
@@ -1084,12 +1095,8 @@ if __name__ == "__main__":
                 port = candidate
                 break
     
-    print("="*80)
-    print("🚀 Starting PuppyResearch API Server")
-    print("="*80)
-    print(f"📡 Server will be available at: http://localhost:{port}")
-    print(f"📚 API docs at: http://localhost:{port}/docs")
-    print("="*80)
+    logger.info("Starting PuppyResearch API Server on http://%s:%s", host, port)
+    logger.info("API docs: http://%s:%s/docs", host, port)
     
     uvicorn.run(
         app,

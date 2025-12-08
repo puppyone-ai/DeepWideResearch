@@ -34,15 +34,15 @@ export default function NewChatButton({ isCreating, showSuccess, onClick }: NewC
       onMouseEnter={(e) => {
         if (!isCreating) {
           e.currentTarget.style.borderColor = '#3a3a3a'
+          e.currentTarget.style.background = 'rgba(25,25,25,0.9)'
           e.currentTarget.style.color = '#e6e6e6'
-          e.currentTarget.style.transform = 'scale(1.08)'
         }
       }}
       onMouseLeave={(e) => {
         if (!isCreating) {
           e.currentTarget.style.borderColor = '#2a2a2a'
+          e.currentTarget.style.background = 'rgba(20,20,20,0.9)'
           e.currentTarget.style.color = '#bbb'
-          e.currentTarget.style.transform = 'scale(1)'
         }
       }}
     >

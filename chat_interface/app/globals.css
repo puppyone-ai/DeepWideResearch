@@ -8,8 +8,8 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", sans-serif;
+  --font-mono: Inconsolata, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 
 /* Force dark theme - remove media query to prevent system theme changes */
@@ -128,4 +128,24 @@ html, body {
   word-break: break-all;
   line-height: 1.4;
   flex: 1;
+}
+
+/* Citation reference badge */
+.citation-reference {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #4a90e2;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 600;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  margin: 0 2px;
+  vertical-align: middle;
+  line-height: 1;
+  cursor: pointer;
+  transition: none;
+  text-decoration: none;
 }

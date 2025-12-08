@@ -92,8 +92,9 @@ export function AccountDataProvider({ children }: { children: React.ReactNode })
       if (!session?.user?.id) return
       setBalanceLoading(true)
       const token = await getAccessToken()
+      if (!token) return
       const res = await fetch(`${apiBase}/api/credits/balance`, {
-        headers: { 'Authorization': token ? `Bearer ${token}` : '' }
+        headers: { 'Authorization': `Bearer ${token}` }
       })
       if (res.ok) {
         const data = await res.json()
@@ -110,11 +111,14 @@ export function AccountDataProvider({ children }: { children: React.ReactNode })
 
   const refreshApiKeys = React.useCallback(async () => {
     try {
+      // Do not fetch keys when not logged in
+      if (!session?.user?.id) return
       setKeysLoading(true)
       const token = await getAccessToken()
-      const res = await fetch(`${apiBase}/api/keys`, {
-        headers: { 'Authorization': token ? `Bearer ${token}` : '' }
-      })
+      if (!token) return
+      const headers: Record<string, string> = {}
+      headers['Authorization'] = `Bearer ${token}`
+      const res = await fetch(`${apiBase}/api/keys`, { headers })
       if (!res.ok) throw new Error(await res.text())
       const data = await res.json() as { keys?: unknown }
       const serverKeys: ApiKeyItem[] = Array.isArray(data.keys) ? (data.keys as ApiKeyItem[]) : []
@@ -124,7 +128,7 @@ export function AccountDataProvider({ children }: { children: React.ReactNode })
     } finally {
       setKeysLoading(false)
     }
-  }, [apiBase, getAccessToken])
+  }, [apiBase, getAccessToken, session?.user?.id])
 
   // One-time initial load on first mount:
   // - Always refresh plan and balance once
@@ -143,14 +147,18 @@ export function AccountDataProvider({ children }: { children: React.ReactNode })
     Promise.resolve(refreshBalance()).catch(() => {})
   }, [isAuthReady, userId, refreshPlan, refreshBalance])
 
+  const keysLoadAttemptedRef = React.useRef(false)
   React.useEffect(() => {
-    // Load keys only once for paid plans when we first know plan
+    // Load keys once for paid plans after auth is ready and user is known
     if (!initializedRef.current) return
+    if (!isAuthReady || !userId) return
+    if (keysLoadAttemptedRef.current) return
     const isPaid = plan === 'plus' || plan === 'pro' || plan === 'enterprise'
-    if (isPaid && apiKeys.length === 0 && !keysLoading) {
+    if (isPaid) {
+      keysLoadAttemptedRef.current = true
       Promise.resolve(refreshApiKeys()).catch(() => {})
     }
-  }, [plan, apiKeys.length, keysLoading, refreshApiKeys])
+  }, [isAuthReady, userId, plan, refreshApiKeys])
 
   const value: AccountDataContextValue = {
     plan,

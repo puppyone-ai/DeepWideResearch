@@ -199,8 +199,8 @@ class MCPRegistry:
             pass
 
         await client.connect()
-        # Record active client for unified shutdown
-        self._active_clients.append(client)
+        # NOTE: No longer tracking clients globally to avoid concurrency issues.
+        # Callers should close clients themselves after use.
         return client
     
     async def collect_tools(self, config: Dict[str, List[str]]) -> tuple[List[Dict[str, Any]], List["MCPClient"]]:
@@ -235,18 +235,12 @@ class MCPRegistry:
         return all_tools, clients
 
     async def close_all_clients(self) -> None:
-        """Close all active clients created and tracked by this registry"""
-        if not self._active_clients:
-            return
-        # Copy list to avoid modifying during iteration
-        clients = list(self._active_clients)
-        self._active_clients.clear()
-        for client in clients:
-            try:
-                await client.close()
-            except Exception:
-                # Avoid affecting main flow due to close issues
-                pass
+        """Deprecated: No longer tracks clients globally.
+        
+        Clients should be closed by the caller that created them.
+        This method is kept for backward compatibility but does nothing.
+        """
+        pass
 
 
 # Global registry instance

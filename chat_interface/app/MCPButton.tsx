@@ -31,6 +31,17 @@ export default function MCPButton({ service, onServiceChange }: MCPButtonProps) 
   const [availableTools, setAvailableTools] = useState<string[]>([])
   const [connectionStatus, setConnectionStatus] = useState<'unknown' | 'connected' | 'disconnected'>('unknown')
 
+  const handleRemoveClick = (e: React.MouseEvent | React.KeyboardEvent) => {
+    e.stopPropagation()
+    const newService = {
+      ...service,
+      enabled: false,
+      tools: service.tools.map(t => ({ ...t, enabled: false }))
+    }
+    onServiceChange(newService)
+    setIsOpen(false)
+  }
+
   // Close panel on outside click
   React.useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -202,65 +213,108 @@ export default function MCPButton({ service, onServiceChange }: MCPButtonProps) 
               />
             </div>
             
-            {/* Refresh Button */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                handleTestConnection()
-              }}
-              disabled={testStatus === 'testing'}
-              title="Refresh connection status"
-              style={{
-                width: '18px',
-                height: '18px',
-                borderRadius: '9px',
-                border: 'none',
-                background: 'transparent',
-                color: testStatus === 'testing' ? '#888' : '#bbb',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: testStatus === 'testing' ? 'not-allowed' : 'pointer',
-                padding: 0,
-                transition: 'all 150ms ease',
-                opacity: testStatus === 'testing' ? 0.6 : 0.8
-              }}
-              onMouseEnter={(e) => {
-                if (testStatus !== 'testing') {
-                  e.currentTarget.style.opacity = '1'
-                  e.currentTarget.style.color = '#e6e6e6'
-                }
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.opacity = '0.8'
-                e.currentTarget.style.color = '#bbb'
-              }}
-            >
-              <svg 
-                width="12" 
-                height="12" 
-                viewBox="0 0 24 24" 
-                fill="none"
-                style={{
-                  animation: testStatus === 'testing' ? 'spin 1s linear infinite' : 'none'
-                }}
-              >
-                <path 
-                  d="M1 4v6h6M23 20v-6h-6" 
-                  stroke="currentColor" 
-                  strokeWidth="2" 
-                  strokeLinecap="round" 
-                  strokeLinejoin="round"
-                />
-                <path 
-                  d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15" 
-                  stroke="currentColor" 
-                  strokeWidth="2" 
-                  strokeLinecap="round" 
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      {/* Refresh Button */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleTestConnection()
+                        }}
+                        disabled={testStatus === 'testing'}
+                        title="Refresh connection status"
+                        style={{
+                          width: '18px',
+                          height: '18px',
+                          borderRadius: '9px',
+                          border: 'none',
+                          background: 'transparent',
+                          color: testStatus === 'testing' ? '#888' : '#bbb',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: testStatus === 'testing' ? 'not-allowed' : 'pointer',
+                          padding: 0,
+                          transition: 'all 150ms ease',
+                          opacity: testStatus === 'testing' ? 0.6 : 0.8
+                        }}
+                        onMouseEnter={(e) => {
+                          if (testStatus !== 'testing') {
+                            e.currentTarget.style.opacity = '1'
+                            e.currentTarget.style.color = '#e6e6e6'
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.opacity = '0.8'
+                          e.currentTarget.style.color = '#bbb'
+                        }}
+                      >
+                        <svg 
+                          width="12" 
+                          height="12" 
+                          viewBox="0 0 24 24" 
+                          fill="none"
+                          style={{
+                            animation: testStatus === 'testing' ? 'spin 1s linear infinite' : 'none'
+                          }}
+                        >
+                          <path 
+                            d="M1 4v6h6M23 20v-6h-6" 
+                            stroke="currentColor" 
+                            strokeWidth="2" 
+                            strokeLinecap="round" 
+                            strokeLinejoin="round"
+                          />
+                          <path 
+                            d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15" 
+                            stroke="currentColor" 
+                            strokeWidth="2" 
+                            strokeLinecap="round" 
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </button>
+                      
+                      {/* Remove Button */}
+                      <button
+                        onClick={handleRemoveClick}
+                        title={`Remove ${service.name}`}
+                        style={{
+                          width: '18px',
+                          height: '18px',
+                          borderRadius: '9px',
+                          border: 'none',
+                          background: 'transparent',
+                          color: '#bbb',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: 'pointer',
+                          padding: 0,
+                          transition: 'all 150ms ease',
+                          opacity: 0.8
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.opacity = '1'
+                          e.currentTarget.style.color = '#ef4444'
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.opacity = '0.8'
+                          e.currentTarget.style.color = '#bbb'
+                        }}
+                      >
+                        <svg 
+                          width="12" 
+                          height="12" 
+                          viewBox="0 0 24 24" 
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                        >
+                          <path d="M6 6L18 18M6 18L18 6" />
+                        </svg>
+                      </button>
+                    </div>
             <style>{`
               @keyframes spin { to { transform: rotate(360deg); } }
               @keyframes pulse {
@@ -395,9 +449,9 @@ export default function MCPButton({ service, onServiceChange }: MCPButtonProps) 
         data-mcp-button={service.name}
         style={{
           position: 'relative',
-          width: '36px',
-          height: '36px',
-          borderRadius: '18px',
+          height: '32px',
+          padding: '0 12px',
+          borderRadius: '0px',
           border: isOpen
             ? '2px solid #5a5a5a'
             : '1px solid #3a3a3a',
@@ -408,14 +462,13 @@ export default function MCPButton({ service, onServiceChange }: MCPButtonProps) 
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
+          gap: '8px',
           cursor: 'pointer',
           boxShadow: isOpen
             ? '0 4px 16px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255,255,255,0.1)' 
             : '0 2px 8px rgba(0,0,0,0.3)',
-          transition: 'all 200ms ease',
-          transform: isOpen ? 'scale(1.05)' : 'scale(1)',
+          transition: 'border-color 150ms ease, color 150ms ease, background-color 150ms ease, box-shadow 150ms ease',
           backdropFilter: 'blur(8px)',
-          padding: 0,
           margin: 0,
           zIndex: 11
         }}
@@ -423,16 +476,12 @@ export default function MCPButton({ service, onServiceChange }: MCPButtonProps) 
           if (!isOpen) {
             e.currentTarget.style.borderColor = '#5a5a5a'
             e.currentTarget.style.color = '#e6e6e6'
-            e.currentTarget.style.transform = 'scale(1.08)'
           }
         }}
         onMouseLeave={(e) => {
           if (!isOpen) {
             e.currentTarget.style.borderColor = '#3a3a3a'
             e.currentTarget.style.color = '#bbb'
-            e.currentTarget.style.transform = 'scale(1)'
-          } else {
-            e.currentTarget.style.transform = 'scale(1.05)'
           }
         }}
       >
@@ -442,18 +491,26 @@ export default function MCPButton({ service, onServiceChange }: MCPButtonProps) 
           style={{
             width: '14px',
             height: '14px',
-            borderRadius: '2px',
+            borderRadius: '0px',
             objectFit: 'contain'
           }}
         />
+        <span
+          style={{
+            fontSize: '12px',
+            color: isOpen ? '#e6e6e6' : '#888'
+          }}
+        >
+          {service.name}
+        </span>
         {/* Minimal corner status dot */}
         {connectionStatus === 'connected' && (
           <div style={{
             position: 'absolute',
-            top: '1px',
-            right: '1px',
-            width: '7px',
-            height: '7px',
+            top: '-4px',
+            right: '-4px',
+            width: '8px',
+            height: '8px',
             borderRadius: '50%',
             background: '#4ade80',
             boxShadow: '0 0 0 1.5px rgba(20, 20, 20, 0.9)'
@@ -462,10 +519,10 @@ export default function MCPButton({ service, onServiceChange }: MCPButtonProps) 
         {connectionStatus === 'disconnected' && (
           <div style={{
             position: 'absolute',
-            top: '1px',
-            right: '1px',
-            width: '7px',
-            height: '7px',
+            top: '-4px',
+              right: '-4px',
+            width: '8px',
+            height: '8px',
             borderRadius: '50%',
             background: '#ef4444',
             boxShadow: '0 0 0 1.5px rgba(20, 20, 20, 0.9)'

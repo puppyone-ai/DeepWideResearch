@@ -3,10 +3,12 @@
 import React from 'react'
 import { useAuth } from '../../supabase/SupabaseAuthProvider'
 import { PRIMARY_BUTTON_COLORS, getPrimaryButtonStyle } from './primaryButtonStyles'
+import ContactSalesPanel from './ContactSalesPanel'
 
 export default function PlansPanel() {
   const { session, supabase, getAccessToken } = useAuth()
   const [activePlan, setActivePlan] = React.useState<'free' | 'plus' | 'pro' | 'enterprise'>('free')
+  const [showContactSales, setShowContactSales] = React.useState(false)
 
   const productId15 = process.env.NEXT_PUBLIC_POLAR_PRODUCT_ID_15
   const productId100 = process.env.NEXT_PUBLIC_POLAR_PRODUCT_ID_100
@@ -291,8 +293,9 @@ export default function PlansPanel() {
               <div className='flex items-start gap-2'><span className='text-[#2CAC58]'>[✓]</span><span>Custom integrations</span></div>
               <div className='flex items-start gap-2'><span className='text-[#2CAC58]'>[✓]</span><span>SLA & compliance</span></div>
             </div>
-            <a
-              href='https://cal.com/guantum/for-users'
+            <button
+              type='button'
+              onClick={() => setShowContactSales(true)}
               style={getPrimaryButtonStyle({ fullWidth: true, variant: 'ghost' })}
               onMouseEnter={(e) => {
                 e.currentTarget.style.background = contactHoverBackground
@@ -305,10 +308,16 @@ export default function PlansPanel() {
                 <path d='M12 19V5M5 12l7-7 7 7'/>
               </svg>
               <span>Contact Sales</span>
-            </a>
+            </button>
           </div>
         </div>
       </div>
+
+      {/* Contact Sales Modal */}
+      <ContactSalesPanel 
+        open={showContactSales} 
+        onClose={() => setShowContactSales(false)} 
+      />
     </div>
   )
 }

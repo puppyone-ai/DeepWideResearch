@@ -185,7 +185,7 @@ export default function ChatPanel({
               onResearchParamsChange={onResearchParamsChange}
             />
             <div style={{ width: '1px', height: '24px', background: '#333', marginLeft: '8px', marginRight: '8px' }} />
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
               <MCPBar value={mcpConfig} onChange={onMcpConfigChange} onAddSourceClick={() => setIsAddSourceOpen(true)} />
             </div>
           </div>

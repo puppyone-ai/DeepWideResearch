@@ -32,7 +32,6 @@ export function HistoryToggleButton({ isOpen, onClick }: HistoryToggleButtonProp
           ? '0 4px 16px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255,255,255,0.1)' 
           : '0 2px 8px rgba(0,0,0,0.3)',
         transition: 'all 200ms ease',
-        transform: isOpen ? 'scale(1.05)' : 'scale(1)',
         backdropFilter: 'blur(8px)',
         padding: 0,
         margin: 0
@@ -40,15 +39,15 @@ export function HistoryToggleButton({ isOpen, onClick }: HistoryToggleButtonProp
       onMouseEnter={(e) => {
         if (!isOpen) {
           e.currentTarget.style.borderColor = '#3a3a3a'
+          e.currentTarget.style.background = 'rgba(25,25,25,0.9)'
           e.currentTarget.style.color = '#e6e6e6'
-          e.currentTarget.style.transform = 'scale(1.08)'
         }
       }}
       onMouseLeave={(e) => {
         if (!isOpen) {
           e.currentTarget.style.borderColor = '#2a2a2a'
+          e.currentTarget.style.background = 'rgba(20,20,20,0.9)'
           e.currentTarget.style.color = '#bbb'
-          e.currentTarget.style.transform = 'scale(1)'
         }
       }}
     >

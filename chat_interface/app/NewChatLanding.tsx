@@ -144,7 +144,7 @@ export default function NewChatLanding({
             height: '32px',
             whiteSpace: 'nowrap'
           }}>
-            <div style={{ fontSize: '20px', lineHeight: '32px', fontWeight: 600, color: '#e5e5e5', whiteSpace: 'pre' }}>{brandTextDisplayed}</div>
+            <div style={{ fontSize: '30px', lineHeight: '32px', fontWeight: 600, color: '#e5e5e5', whiteSpace: 'pre' }}>{brandTextDisplayed}</div>
           </div>
           {/* Settings row (MCP only) */}
           <div style={{
@@ -223,6 +223,7 @@ export default function NewChatLanding({
                 <DeepWideModel
                   researchParams={researchParams}
                   onResearchParamsChange={onResearchParamsChange}
+                  menuDirection="down"
                 />
               </div>
               <button

@@ -1,578 +1,325 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import { useEffect } from 'react'
 import { useAuth } from './supabase/SupabaseAuthProvider'
-import dynamic from 'next/dynamic'
-// Grid and MCP controls are composed inside ChatPanel
- 
-import DevModePanel from './headercomponent/DevModeButton'
-import MainHeaderBar from './headercomponent/MainHeaderBar'
 import { useRouter } from 'next/navigation'
-import { useSession } from './context/SessionContext'
-import type { Message as UIMessage } from '../components/ChatMain'
-import { useUiMessages } from './hooks/useUiMessages'
-import { useAccountData } from './context/AccountDataContext'
- 
+import Image from 'next/image'
 
-// Dynamically import ChatPanel (composes settings buttons and ChatInterface)
-const ChatPanel = dynamic(
-  () => import('./ChatPanel'),
-  { ssr: false }
-)
-
-// Standard message format - follows OpenAI format
-interface ChatMessage {
-  role: 'user' | 'assistant' | 'system'
-  content: string
-  timestamp?: number
-  actionList?: string[]
-  sources?: { service: string; query: string; url: string }[]
-}
+import SiteHeader from '@/components/landingpage/SiteHeader'
+import LandingChatInterface from '@/components/landingpage/LandingChatInterface'
+import ApiSdkShowcase from '@/components/landingpage/ApiSdkShowcase'
+import McpShowcaseGeek from '@/components/landingpage/McpShowcaseGeek'
+import SiteFooter from '@/components/landingpage/SiteFooter'
 
 export default function Home() {
-  const { getAccessToken, session, isAuthReady } = useAuth()
+  const { session, isAuthReady } = useAuth()
   const router = useRouter()
 
   useEffect(() => {
-    if (isAuthReady && !session) {
-      router.replace('/login')
-    }
+    if (isAuthReady && session) router.push('/chat')
   }, [isAuthReady, session, router])
-  // 🎯 Use SessionContext (contains session list, message history, etc.)
-  const {
-    sessions,
-    chatHistory,
-    currentSessionId,
-    tempSessionId,
-    isLoading: isLoadingSessions,
-    isLoadingChat,
-    createSession,
-    createTempSession,
-    promoteTempSession,
-    switchSession,
-    deleteSession,
-    addMessage,
-    saveSessionToBackend,
-    updateMessages
-  } = useSession()
-
-  // UI state
-  const [researchParams, setResearchParams] = useState<{ deep: number; wide: number; model?: string }>({ 
-    deep: 1.0, 
-    wide: 1.0,
-    model: 'google/gemini-3-pro-preview' // Default model
-  })
-  const [sidebarWidth, setSidebarWidth] = useState(240)
-  const [isSidebarMenuOpen, setIsSidebarMenuOpen] = useState(false)
-  const [isDevModeOpen, setIsDevModeOpen] = useState(false)
-  const [isCreatingSession, setIsCreatingSession] = useState(false)
-  const [showCreateSuccess, setShowCreateSuccess] = useState(false)
-  const { balance, balanceLoading } = useAccountData()
-  
-  // 📜 Cache streaming history for each session (session_id -> streamingHistory[])
-  const [sessionStreamingCache, setSessionStreamingCache] = useState<Record<string, string[]>>({})
-  
-  // 🔑 Stable key for ChatMain component, avoid re-mounting when promoting temporary session
-  const [chatComponentKey, setChatComponentKey] = useState<string>('default')
-  
-  // Update chatComponentKey when currentSessionId changes (excluding temporary session promotion)
-  const previousSessionIdRef = React.useRef<string | null>(null)
-  React.useEffect(() => {
-    const prev = previousSessionIdRef.current
-    const current = currentSessionId
-    
-    // If switching from temporary session to permanent session (promotion), keep key unchanged
-    const isTempPromotion = prev?.startsWith('temp-') && current && !current.startsWith('temp-')
-    
-    if (!isTempPromotion && current !== prev && current) {
-      // Normal session switch, update key
-      console.log('🔑 Updating chatComponentKey from', prev, 'to', current)
-      setChatComponentKey(current)
-    }
-    
-    previousSessionIdRef.current = current
-  }, [currentSessionId])
-  
-  // Track currentSessionId changes
-  React.useEffect(() => {
-    console.log('📌 currentSessionId changed to:', currentSessionId)
-  }, [currentSessionId])
-
-  // Close Dev Mode panel on outside click
-  React.useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (!isDevModeOpen) return
-      const target = event.target as Element
-      const devPanel = document.querySelector('[data-dev-panel]')
-      const devButton = document.querySelector('[data-dev-button]')
-      const isClickInDev = devPanel ? devPanel.contains(target) : false
-      const isClickOnDevButton = devButton ? devButton.contains(target) : false
-      if (!isClickInDev && !isClickOnDevButton) {
-        setIsDevModeOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [isDevModeOpen])
-  const [mcpConfig, setMcpConfig] = useState({
-    services: [
-      { 
-        name: 'Tavily', 
-        enabled: true, 
-        tools: [
-          { name: 'tavily_search', enabled: true, description: 'Web search using Tavily' }
-        ]
-      },
-      { 
-        name: 'Exa', 
-        enabled: true, 
-        tools: [
-          { name: 'web_search_exa', enabled: true, description: 'AI-powered web search using Exa' }
-        ]
-      }
-    ]
-  })
-
-
-  // Balance now comes from AccountDataContext (single source of truth). No local fetching here.
-
-  // Add debug info - show current parameter state
-  React.useEffect(() => {
-    console.log('📊 Current research params:', researchParams)
-  }, [researchParams])
-
-  // Add debug info - show current MCP configuration state
-  React.useEffect(() => {
-    const enabledServices = mcpConfig.services
-      .filter(service => service.enabled)
-      .map(service => service.name)
-
-    const mcpForBackend = mcpConfig.services.reduce((acc, service) => {
-      if (service.enabled) {
-        const enabledTools = service.tools
-          .filter(tool => tool.enabled)
-          .map(tool => tool.name)
-        
-        if (enabledTools.length > 0) {
-          acc[service.name.toLowerCase()] = enabledTools
-        }
-      }
-      return acc
-    }, {} as Record<string, string[]>)
-    
-    console.log('🔧 Current MCP config:', {
-      allServices: mcpConfig.services.map(s => ({ 
-        name: s.name, 
-        enabled: s.enabled,
-        tools: s.tools.map(t => ({ name: t.name, enabled: t.enabled }))
-      })),
-      enabledServices: enabledServices,
-      backendFormat: mcpForBackend
-    })
-  }, [mcpConfig])
-
-  // Sidebar dropdown (overlay) close on outside click
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (!isSidebarMenuOpen) return
-      const target = event.target as Element
-      const panel = document.querySelector('[data-sidebar-panel]')
-      const toggle = document.querySelector('[data-sidebar-toggle]')
-      if (panel && toggle) {
-        const inPanel = panel.contains(target)
-        const onToggle = toggle.contains(target)
-        if (!inPanel && !onToggle) {
-          setIsSidebarMenuOpen(false)
-        }
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [isSidebarMenuOpen])
-
-  // Map messages from Context to UI messages via hook (keeps this file lean)
-  const uiMessages: UIMessage[] = useUiMessages(chatHistory, currentSessionId, sessionStreamingCache)
-
-  // Decide whether to show a splash (logo) while chat history is loading/preparing
-  const hasSession = !!currentSessionId
-  const isTempSession = currentSessionId ? currentSessionId.startsWith('temp-') : false
-  const hasLoadedCurrent = hasSession ? (chatHistory[currentSessionId!] !== undefined) : false
-  const showChatSplash = !hasSession || (!isTempSession && !hasLoadedCurrent) || isLoadingChat
-
-  // Handle creating new chat
-  const handleCreateNewChat = async () => {
-    if (isCreatingSession) return
-    setIsCreatingSession(true)
-    try {
-      // If already has temporary session, switch to it; otherwise create new temporary session
-      if (tempSessionId) {
-        await switchSession(tempSessionId)
-      } else {
-        createTempSession()
-      }
-      setIsSidebarMenuOpen(false)
-      // Show success feedback
-      setShowCreateSuccess(true)
-      setTimeout(() => setShowCreateSuccess(false), 2000)
-    } finally {
-      setIsCreatingSession(false)
-    }
-  }
-
-  // Handle session switch (use Context's cache mechanism)
-  const handleSessionClick = async (id: string) => {
-    try {
-      await switchSession(id) // ✅ Use Context's switchSession, automatically handle cache
-      setIsSidebarMenuOpen(false)
-    } catch (e) {
-      console.warn('Failed to switch session:', e)
-    }
-  }
-
-  // Handle session deletion
-  const handleDeleteSession = async (id: string) => {
-    try {
-      await deleteSession(id) // ✅ Use Context's deleteSession
-    } catch (e) {
-      console.warn('Failed to delete session:', e)
-    }
-  }
-
-  const handleSendMessage = async (message: string, onStreamUpdate?: (content: string, isStreaming?: boolean, statusHistory?: string[]) => void) => {
-    // 🔒 Key: Lock the current sessionId at the start of the function, prevent state confusion from session switching
-    let targetSessionId = currentSessionId
-    
-    // 📝 Before promoting temporary session, save temporary session messages first
-    let messagesBeforePromotion: ChatMessage[] = []
-    if (tempSessionId && currentSessionId === tempSessionId) {
-      messagesBeforePromotion = chatHistory[tempSessionId] || []
-    }
-    
-    // If current session is temporary, promote it to permanent first
-    if (tempSessionId && currentSessionId === tempSessionId) {
-      console.log('⬆️ Promoting temp session before sending message')
-      const firstUserMessage = message.slice(0, 60) // Use first 60 characters of first message as title
-      targetSessionId = await promoteTempSession(firstUserMessage)
-    } else if (!targetSessionId) {
-      // If no session exists, create a new permanent session
-      const firstUserMessage = message.slice(0, 60)
-      targetSessionId = await createSession(firstUserMessage)
-      await switchSession(targetSessionId)
-    }
-    
-    const userMessage: ChatMessage = { role: 'user', content: message, timestamp: Date.now() }
-    
-    // 📝 If just promoted temporary session, use saved messages before promotion; otherwise get from chatHistory
-    const currentMessages = messagesBeforePromotion.length > 0 
-      ? messagesBeforePromotion 
-      : (chatHistory[targetSessionId] || [])
-    const localHistoryBefore = [...currentMessages, userMessage]
-    
-    try {
-      // ✅ Immediately add user message to Context (UI updates immediately)
-      addMessage(targetSessionId, userMessage)
-
-      // Prepare assistant placeholder to update in-place during streaming
-      const assistantTimestamp = Date.now()
-      let assistantMessage: ChatMessage = { role: 'assistant', content: '', timestamp: assistantTimestamp, actionList: [] }
-      // Show assistant placeholder immediately in UI
-      addMessage(targetSessionId!, assistantMessage)
-      let workingHistory: ChatMessage[] = [...localHistoryBefore, assistantMessage]
-
-      // Construct request data (strip UI-only fields like actionList before sending)
-      const sanitizedHistory = localHistoryBefore.map((m) => ({
-        role: m.role,
-        content: m.content,
-        timestamp: m.timestamp
-      }))
-      
-      const requestData = {
-        message: {
-          query: message,
-          deepwide: {
-            deep: researchParams.deep,
-            wide: researchParams.wide,
-            model: researchParams.model
-          },
-            mcp: mcpConfig.services.reduce((acc, service) => {
-              // Only include enabled services and their tools
-              if (service.enabled) {
-                const enabledTools = service.tools
-                  .filter(tool => tool.enabled)
-                  .map(tool => tool.name)
-                
-                if (enabledTools.length > 0) {
-                  // Convert to backend expected format: {service_name_lowercase: [enabled_tools_list]}
-                  acc[service.name.toLowerCase()] = enabledTools
-                }
-              }
-              return acc
-            }, {} as Record<string, string[]>)
-        },
-        history: sanitizedHistory  // Send conversation history without UI-only fields
-      }
-
-      console.log('🚀 Sending streaming request to backend:', message)
-
-      // Call streaming API - use environment variable or default local address
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-      const token = await getAccessToken()
-      const response = await fetch(`${apiUrl}/api/research`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'text/event-stream',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify(requestData),
-        cache: 'no-store'
-      })
-
-      if (!response.ok) {
-        throw new Error(`API request failed: ${response.statusText}`)
-      }
-
-      const reader = response.body?.getReader()
-      if (!reader) {
-        throw new Error('No response body reader available')
-      }
-
-      const statusHistory: string[] = [] // 📜 累积所有状态步骤
-      let finalReport = ''
-      let isGeneratingReport = false
-
-      // Read streaming response (buffer-safe)
-      const decoder = new TextDecoder()
-      let pending = ''
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        pending += decoder.decode(value, { stream: true })
-        const lines = pending.split('\n')
-        // keep the last partial line in pending
-        pending = lines.pop() || ''
-        
-        for (const rawLine of lines) {
-          const line = rawLine.trimEnd()
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6))
-              
-              if (data.action === 'complete' && data.final_report) {
-                finalReport = data.final_report
-                onStreamUpdate?.(finalReport, false, statusHistory) // 传递完整历史
-                isGeneratingReport = false
-                // Update assistant message with final content and full actionList
-                assistantMessage = { ...assistantMessage, content: finalReport, actionList: statusHistory.length > 0 ? [...statusHistory] : undefined }
-                workingHistory = [...localHistoryBefore, assistantMessage]
-                updateMessages(targetSessionId!, workingHistory)
-              } else if (data.action === 'report_chunk') {
-                // Streaming report content
-                finalReport = data.accumulated_report
-                if (!isGeneratingReport) {
-                  isGeneratingReport = true
-                }
-                onStreamUpdate?.(finalReport, true, statusHistory) // Stream the accumulated report
-                // Update assistant content and (if any) actionList
-                assistantMessage = { ...assistantMessage, content: finalReport, actionList: statusHistory.length > 0 ? [...statusHistory] : assistantMessage.actionList }
-                workingHistory = [...localHistoryBefore, assistantMessage]
-                updateMessages(targetSessionId!, workingHistory)
-              } else if (data.action === 'sources_update' && Array.isArray(data.sources)) {
-                // Update assistant message with latest minimal sources and sync UI
-                assistantMessage = { ...assistantMessage, sources: data.sources }
-                workingHistory = [...localHistoryBefore, assistantMessage]
-                updateMessages(targetSessionId!, workingHistory)
-              } else if (data.message) {
-                statusHistory.push(data.message) // 👈 追加到历史，不覆盖
-                // Only update streaming status if not currently generating report
-                if (!isGeneratingReport) {
-                  onStreamUpdate?.(data.message, true, statusHistory) // 传递当前消息和完整历史
-                }
-                // Reflect latest step into assistant actionList only; content should only show backend report chunks
-                assistantMessage = { ...assistantMessage, actionList: [...statusHistory] }
-                workingHistory = [...localHistoryBefore, assistantMessage]
-                updateMessages(targetSessionId!, workingHistory)
-              }
-            } catch (e) {
-              console.warn('Failed to parse SSE data:', line)
-            }
-          }
-        }
-      }
-
-      // 📜 Cache the streaming history for this session
-      if (statusHistory.length > 0) {
-        setSessionStreamingCache(prev => ({
-          ...prev,
-          [targetSessionId]: statusHistory
-        }))
-        console.log('📜 Cached streaming history for session:', targetSessionId, 'steps:', statusHistory.length)
-      }
-      
-      // ✅ Save to backend
-      const completeHistory = workingHistory
-      await saveSessionToBackend(targetSessionId, completeHistory)
-      
-      // 🔑 If promoted from temporary session, now safe to update chatComponentKey
-      if (messagesBeforePromotion.length > 0 && targetSessionId !== chatComponentKey) {
-        console.log('🔑 Updating chatComponentKey after successful message, from', chatComponentKey, 'to', targetSessionId)
-        setChatComponentKey(targetSessionId)
-      }
-      
-      return finalReport || statusHistory[statusHistory.length - 1] || ''
-      
-    } catch (error) {
-      console.error('Error calling research API:', error)
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-      const errorMessage = `❌ Error: ${error instanceof Error ? error.message : `Failed to connect to research API. Please make sure the backend server is running at ${apiUrl}`}`
-      
-      // ✅ Add error message to Context
-      const errorAssistantMessage: ChatMessage = { role: 'assistant', content: errorMessage, timestamp: Date.now() }
-      addMessage(targetSessionId, errorAssistantMessage)
-      
-      // ✅ Save to backend
-      const completeHistoryWithError = [...localHistoryBefore, errorAssistantMessage]
-      await saveSessionToBackend(targetSessionId, completeHistoryWithError).catch(e => 
-        console.warn('Failed to save error message:', e)
-      )
-      
-      // 🔑 If promoted from temporary session, now safe to update chatComponentKey
-      if (messagesBeforePromotion.length > 0 && targetSessionId !== chatComponentKey) {
-        console.log('🔑 Updating chatComponentKey after error message, from', chatComponentKey, 'to', targetSessionId)
-        setChatComponentKey(targetSessionId)
-      }
-      
-      return errorMessage
-    }
-  }
-
-  // Gate rendering to avoid flicker: wait for auth to resolve
-  if (!isAuthReady) {
-    return (
-      <div style={{
-        height: '100vh',
-        width: '100vw',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: '#0a0a0a',
-        backgroundImage: 'radial-gradient(circle at 20% 80%, rgba(120, 120, 120, 0.06) 0%, transparent 50%), radial-gradient(circle at 80% 20%, rgba(120, 120, 120, 0.06) 0%, transparent 50%)'
-      }}>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-          <img src="/SimpleDWlogo.svg" alt="Deep Wide Research" width={52} height={52} style={{ opacity: 0.95 }} />
-          <div style={{ marginTop: 4, color: '#bbb', fontSize: 12 }}>Loading…</div>
-        </div>
-      </div>
-    )
-  }
-
-  // If not authenticated (and auth is ready), let the redirect occur without rendering chat UI
-  if (!session) {
-    return null
-  }
 
   return (
-    <div style={{ 
-      height: '100vh', 
-      width: '100vw',
-      display: 'flex', 
-      alignItems: 'flex-start',
-      justifyContent: 'flex-start',
-        padding: '24px 24px 24px 24px',
-      backgroundColor: '#0a0a0a',
-      backgroundImage: 'radial-gradient(circle at 20% 80%, rgba(120, 120, 120, 0.1) 0%, transparent 50%), radial-gradient(circle at 80% 20%, rgba(120, 120, 120, 0.1) 0%, transparent 50%)',
-      overflow: 'hidden',
-      boxSizing: 'border-box'
-    }}>
-      <div style={{ 
-        height: '100%', 
-        width: '100%', 
-        display: 'flex', 
-        alignItems: 'stretch', 
-        gap: '16px',
-        overflow: 'hidden'
-      }}>
-        {/* Left side no longer occupies flex space, sessions rendered as header overlay */}
+    <div className="h-screen overflow-auto w-full font-mono bg-background text-foreground">
+      <SiteHeader />
 
-        {/* Right side chat area (limit max width to 800px) */}
-        <div style={{ 
-          flex: 1, 
-          display: 'flex', 
-          justifyContent: 'center',
-          overflow: 'hidden',
-          minHeight: 0
-        }}>
-          <div style={{ 
-            width: '100%', 
-            height: '100%', 
-            display: 'flex', 
-            flexDirection: 'column', 
-            gap: '2px',
-            overflow: 'hidden',
-            minHeight: 0
-          }}>
-            {/* Top control bar (independent width) */}
-            <MainHeaderBar
-              isSidebarMenuOpen={isSidebarMenuOpen}
-              onToggleSidebarMenu={() => setIsSidebarMenuOpen(prev => !prev)}
-              isCreatingSession={isCreatingSession}
-              showCreateSuccess={showCreateSuccess}
-              onCreateNewChat={handleCreateNewChat}
-              sessions={sessions}
-              currentSessionId={currentSessionId}
-              isLoadingSessions={isLoadingSessions}
-              onSessionClick={handleSessionClick}
-              onDeleteSession={handleDeleteSession}
-              sidebarWidth={sidebarWidth}
-              isDevModeOpen={isDevModeOpen}
-              onToggleDevMode={() => setIsDevModeOpen(prev => !prev)}
-              balance={balance}
-              balanceLoading={balanceLoading}
-            />
+      <main className="mx-auto max-w-6xl px-6">
+        {/* Main Value Proposition replaced with Chat Interface */}
+        <LandingChatInterface />
 
-            {/* Dev Mode Panel (aligned with header width) */}
-            <div style={{ display: 'flex', justifyContent: 'center' }}>
-              <div style={{ width: '100%', maxWidth: '900px' }} data-dev-panel>
-                <DevModePanel isOpen={isDevModeOpen} onClose={() => setIsDevModeOpen(false)} />
-              </div>
+        <div className="mt-16 mb-12 border-t border-white/10" role="separator" aria-hidden="true" />
+        
+        <section id="api-sdk" className="mt-16 md:mt-24">
+          <h2 className="text-[16px] font-semibold tracking-tight text-foreground/50 text-center">Access any Deep & Wide research via API or SDK</h2>
+          <p className="mt-4 text-[14px] text-foreground/50 text-center">All research scenarios from quick Q&amp;A to comprehensive analysis — controlled by just two parameters</p>
+          <ApiSdkShowcase />
+        </section>
+
+        <section id="mcp" className="mt-16 md:mt-24">
+          <h2 className="text-[16px] font-semibold tracking-tight text-foreground/50 text-center">Connect MCP servers to expand capabilities</h2>
+          <p className="mt-4 text-[14px] text-foreground/50 text-center">Plug in data sources and tools via Model Context Protocol</p>
+          <McpShowcaseGeek />
+        </section>
+
+        <section id="comparison" className="mt-16 md:mt-24">
+          <h2 className="text-[16px] font-semibold tracking-tight text-foreground/50 text-center">How we compare to other deep research tools</h2>
+          <p className="mt-4 text-[14px] text-foreground/50 text-center">Open Deep Wide Research vs GenSpark, OpenAI, Manus, Gemini, Jina, LangChain</p>
+          <div className="mt-6 mb-6 border-t border-white/10" role="separator" aria-hidden="true" />
+          <div className="relative pt-4">
+            <div className="overflow-x-auto border-2 border-white/20 bg-black/20">
+              <table className="min-w-full table-fixed text-[14px] text-foreground/70">
+                <colgroup>
+                  <col className="w-[140px]" />
+                  <col className="w-[80px]" />
+                  <col className="w-[80px]" />
+                  <col className="w-[80px]" />
+                  <col className="w-[80px]" />
+                  <col className="w-[80px]" />
+                  <col className="w-[80px]" />
+                  <col className="w-[80px]" />
+                </colgroup>
+                <thead className="bg-black/40 text-foreground/80 border-b-2 border-white/20">
+                  <tr>
+                    <th scope="col" className="sticky left-0 z-10 bg-black/40 px-3 py-4 text-left font-medium w-[140px] border-r border-white/10">Feature</th>
+                    <th scope="col" className="px-2 py-3 text-center font-medium w-[80px] border-r border-white/10">
+                      <Image src="/openai.jpg" alt="OpenAI" width={48} height={48} className="mx-auto mb-2" />
+                      <span className="block text-xs leading-tight">OpenAI</span>
+                    </th>
+                    <th scope="col" className="px-2 py-3 text-center font-medium w-[80px] border-r border-white/10">
+                      <Image src="/genmini.jpg" alt="Gemini" width={40} height={40} className="mx-auto mb-4" />
+                      <span className="block text-xs leading-tight">Gemini</span>
+                    </th>
+                    <th scope="col" className="px-2 py-3 text-center font-medium w-[80px] border-r border-white/10">
+                      <Image src="/manus.png" alt="Manus" width={32} height={32} className="mx-auto mt-1 mb-5" />
+                      <span className="block text-xs leading-tight">Manus</span>
+                    </th>
+                    <th scope="col" className="px-2 py-3 text-center font-medium w-[80px] border-r-2 border-l-2 border-[#2CAC58] bg-[#2CAC58]/10 relative">
+                      <div className="absolute -top-5 left-1/2 -translate-x-1/2 bg-[#2CAC58] text-black text-xs font-bold px-2 py-0.5 whitespace-nowrap z-20">← YOU</div>
+                      <Image src="/DWResearch.png" alt="Open Deep Wide Research" width={48} height={48} className="mx-auto mb-2" />
+                      <span className="block text-xs leading-tight font-semibold">Open Deep Wide Research</span>
+                    </th>
+                    <th scope="col" className="px-2 py-3 text-center font-medium w-[80px] border-r border-white/10">
+                      <Image src="/genspark.jpg" alt="GenSpark" width={40} height={40} className="mx-auto mb-4" />
+                      <span className="block text-xs leading-tight">GenSpark</span>
+                    </th>
+                    <th scope="col" className="px-2 py-3 text-center font-medium w-[80px] border-r border-white/10">
+                      <Image src="/jina.jpg" alt="Jina" width={48} height={48} className="mx-auto mb-2" />
+                      <span className="block text-xs leading-tight">Jina</span>
+                    </th>
+                    <th scope="col" className="px-2 py-3 text-center font-medium w-[80px]">
+                      <Image src="/langchain.png" alt="LangChain" width={48} height={48} className="mx-auto mb-2" />
+                      <span className="block text-xs leading-tight">LangChain</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/10">
+                  <tr>
+                    <th scope="row" className="sticky left-0 bg-black/20 px-3 py-4 text-left font-medium text-foreground/80 w-[140px] border-r border-white/10">Depth × width controls</th>
+                    <td className="px-3 py-4 text-center w-[80px] border-r border-white/10"><span className="inline-block px-2 py-0.5 text-foreground/20 text-xs">---</span></td>
+                    <td className="px-3 py-4 text-center w-[80px] border-r border-white/10"><span className="inline-block px-2 py-0.5 text-foreground/20 text-xs">---</span></td>
+                    <td className="px-3 py-4 text-center w-[80px] border-r border-white/10"><span className="text-green-500">W</span></td>
+                    <td className="px-3 py-4 text-center w-[80px] border-r-2 border-l-2 border-[#2CAC58] bg-[#2CAC58]/10"><span className="text-green-500 font-bold">D x W</span></td>
+                    <td className="px-3 py-4 text-center w-[80px] border-r border-white/10"><span className="inline-block px-2 py-0.5 text-foreground/20 text-xs">---</span></td>
+                    <td className="px-3 py-4 text-center w-[80px] border-r border-white/10"><span className="text-green-500">D</span></td>
+                    <td className="px-3 py-4 text-center w-[80px]"><span className="inline-block px-2 py-0.5 text-foreground/20 text-xs">---</span></td>
+                  </tr>
+                  <tr>
+                    <th scope="row" className="sticky left-0 bg-black/20 px-3 py-4 text-left font-medium text-foreground/80 w-[140px] border-r border-white/10">Open source</th>
+                    <td className="px-3 py-4 text-center w-[80px] border-r border-white/10"><span className="inline-block px-2 py-0.5 text-foreground/20 text-xs">---</span></td>
+                    <td className="px-3 py-4 text-center w-[80px] border-r border-white/10"><span className="inline-block px-2 py-0.5 text-foreground/20 text-xs">---</span></td>
+                    <td className="px-3 py-4 text-center w-[80px] border-r border-white/10"><span className="inline-block px-2 py-0.5 text-foreground/20 text-xs">---</span></td>
+                    <td className="px-3 py-4 text-center w-[80px] border-r-2 border-l-2 border-[#2CAC58] bg-[#2CAC58]/10"><span className="inline-block px-2 py-0.5 bg-[#2CAC58]/20 border border-[#2CAC58] text-[#2CAC58] text-xs font-bold">YES</span></td>
+                    <td className="px-3 py-4 text-center w-[80px] border-r border-white/10"><span className="inline-block px-2 py-0.5 text-foreground/20 text-xs">---</span></td>
+                    <td className="px-3 py-4 text-center w-[80px] border-r border-white/10"><span className="inline-block px-2 py-0.5 bg-[#2CAC58]/20 border border-[#2CAC58] text-[#2CAC58] text-xs font-bold">YES</span></td>
+                    <td className="px-3 py-4 text-center w-[80px]"><span className="inline-block px-2 py-0.5 bg-[#2CAC58]/20 border border-[#2CAC58] text-[#2CAC58] text-xs font-bold">YES</span></td>
+                  </tr>
+                  <tr>
+                    <th scope="row" className="sticky left-0 bg-black/20 px-3 py-4 text-left font-medium text-foreground/80 w-[140px] border-r border-white/10">MCP support</th>
+                    <td className="px-3 py-4 text-center w-[80px] border-r border-white/10"><span className="inline-block px-2 py-0.5 bg-[#2CAC58]/20 border border-[#2CAC58] text-[#2CAC58] text-xs font-bold">YES</span></td>
+                    <td className="px-3 py-4 text-center w-[80px] border-r border-white/10"><span className="inline-block px-2 py-0.5 text-foreground/20 text-xs">---</span></td>
+                    <td className="px-3 py-4 text-center w-[80px] border-r border-white/10"><span className="inline-block px-2 py-0.5 text-foreground/20 text-xs">---</span></td>
+                    <td className="px-3 py-4 text-center w-[80px] border-r-2 border-l-2 border-[#2CAC58] bg-[#2CAC58]/10"><span className="inline-block px-2 py-0.5 bg-[#2CAC58]/20 border border-[#2CAC58] text-[#2CAC58] text-xs font-bold">YES</span></td>
+                    <td className="px-3 py-4 text-center w-[80px] border-r border-white/10"><span className="inline-block px-2 py-0.5 text-foreground/20 text-xs">---</span></td>
+                    <td className="px-3 py-4 text-center w-[80px] border-r border-white/10"><span className="inline-block px-2 py-0.5 bg-[#2CAC58]/20 border border-[#2CAC58] text-[#2CAC58] text-xs font-bold">YES</span></td>
+                    <td className="px-3 py-4 text-center w-[80px]"><span className="inline-block px-2 py-0.5 text-foreground/20 text-xs">---</span></td>
+                  </tr>
+                  <tr>
+                    <th scope="row" className="sticky left-0 bg-black/20 px-3 py-4 text-left font-medium text-foreground/80 w-[140px] border-r border-white/10">SDK / API</th>
+                    <td className="px-3 py-4 text-center w-[80px] border-r border-white/10"><span className="inline-block px-2 py-0.5 bg-[#2CAC58]/20 border border-[#2CAC58] text-[#2CAC58] text-xs font-bold">YES</span></td>
+                    <td className="px-3 py-4 text-center w-[80px] border-r border-white/10"><span className="inline-block px-2 py-0.5 bg-[#2CAC58]/20 border border-[#2CAC58] text-[#2CAC58] text-xs font-bold">YES</span></td>
+                    <td className="px-3 py-4 text-center w-[80px] border-r border-white/10"><span className="inline-block px-2 py-0.5 text-foreground/20 text-xs">---</span></td>
+                    <td className="px-3 py-4 text-center w-[80px] border-r-2 border-l-2 border-[#2CAC58] bg-[#2CAC58]/10"><span className="inline-block px-2 py-0.5 bg-[#2CAC58]/20 border border-[#2CAC58] text-[#2CAC58] text-xs font-bold">YES</span></td>
+                    <td className="px-3 py-4 text-center w-[80px] border-r border-white/10"><span className="inline-block px-2 py-0.5 text-foreground/20 text-xs">---</span></td>
+                    <td className="px-3 py-4 text-center w-[80px] border-r border-white/10"><span className="inline-block px-2 py-0.5 bg-[#2CAC58]/20 border border-[#2CAC58] text-[#2CAC58] text-xs font-bold">YES</span></td>
+                    <td className="px-3 py-4 text-center w-[80px]"><span className="inline-block px-2 py-0.5 bg-[#2CAC58]/20 border border-[#2CAC58] text-[#2CAC58] text-xs font-bold">YES</span></td>
+                  </tr>
+                  <tr>
+                    <th scope="row" className="sticky left-0 bg-black/20 px-3 py-4 text-left font-medium text-foreground/80 w-[140px] border-r border-white/10">Local knowledge</th>
+                    <td className="px-3 py-4 text-center w-[80px] border-r border-white/10"><span className="inline-block px-2 py-0.5 text-foreground/20 text-xs">---</span></td>
+                    <td className="px-3 py-4 text-center w-[80px] border-r border-white/10"><span className="inline-block px-2 py-0.5 text-foreground/20 text-xs">---</span></td>
+                    <td className="px-3 py-4 text-center w-[80px] border-r border-white/10"><span className="inline-block px-2 py-0.5 text-foreground/20 text-xs">---</span></td>
+                    <td className="px-3 py-4 text-center w-[80px] border-r-2 border-l-2 border-[#2CAC58] bg-[#2CAC58]/10"><span className="inline-block px-2 py-0.5 bg-[#2CAC58]/20 border border-[#2CAC58] text-[#2CAC58] text-xs font-bold">YES</span></td>
+                    <td className="px-3 py-4 text-center w-[80px] border-r border-white/10"><span className="inline-block px-2 py-0.5 text-foreground/20 text-xs">---</span></td>
+                    <td className="px-3 py-4 text-center w-[80px] border-r border-white/10"><span className="inline-block px-2 py-0.5 bg-[#2CAC58]/20 border border-[#2CAC58] text-[#2CAC58] text-xs font-bold">YES</span></td>
+                    <td className="px-3 py-4 text-center w-[80px]"><span className="inline-block px-2 py-0.5 bg-[#2CAC58]/20 border border-[#2CAC58] text-[#2CAC58] text-xs font-bold">YES</span></td>
+                  </tr>
+                  <tr>
+                    <th scope="row" className="sticky left-0 bg-black/20 px-3 py-4 text-left font-medium text-foreground/80 w-[140px] border-r border-white/10">Model flexibility</th>
+                    <td className="px-3 py-4 text-center w-[80px] border-r border-white/10"><span className="inline-block px-2 py-0.5 text-foreground/20 text-xs">---</span></td>
+                    <td className="px-3 py-4 text-center w-[80px] border-r border-white/10"><span className="inline-block px-2 py-0.5 text-foreground/20 text-xs">---</span></td>
+                    <td className="px-3 py-4 text-center w-[80px] border-r border-white/10"><span className="inline-block px-2 py-0.5 text-foreground/20 text-xs">---</span></td>
+                    <td className="px-3 py-4 text-center w-[80px] border-r-2 border-l-2 border-[#2CAC58] bg-[#2CAC58]/10"><span className="inline-block px-2 py-0.5 bg-[#2CAC58]/20 border border-[#2CAC58] text-[#2CAC58] text-xs font-bold">YES</span></td>
+                    <td className="px-3 py-4 text-center w-[80px] border-r border-white/10"><span className="inline-block px-2 py-0.5 text-foreground/20 text-xs">---</span></td>
+                    <td className="px-3 py-4 text-center w-[80px] border-r border-white/10"><span className="inline-block px-2 py-0.5 text-foreground/20 text-xs">---</span></td>
+                    <td className="px-3 py-4 text-center w-[80px]"><span className="inline-block px-2 py-0.5 bg-[#2CAC58]/20 border border-[#2CAC58] text-[#2CAC58] text-xs font-bold">YES</span></td>
+                  </tr>
+                  <tr>
+                    <th scope="row" className="sticky left-0 bg-black/20 px-3 py-4 text-left font-medium text-foreground/80 w-[140px] border-r border-white/10">Search engine flexibility</th>
+                    <td className="px-3 py-4 text-center w-[80px] border-r border-white/10"><span className="inline-block px-2 py-0.5 text-foreground/20 text-xs">---</span></td>
+                    <td className="px-3 py-4 text-center w-[80px] border-r border-white/10"><span className="inline-block px-2 py-0.5 text-foreground/20 text-xs">---</span></td>
+                    <td className="px-3 py-4 text-center w-[80px] border-r border-white/10"><span className="inline-block px-2 py-0.5 text-foreground/20 text-xs">---</span></td>
+                    <td className="px-3 py-4 text-center w-[80px] border-r-2 border-l-2 border-[#2CAC58] bg-[#2CAC58]/10"><span className="inline-block px-2 py-0.5 bg-[#2CAC58]/20 border border-[#2CAC58] text-[#2CAC58] text-xs font-bold">YES</span></td>
+                    <td className="px-3 py-4 text-center w-[80px] border-r border-white/10"><span className="inline-block px-2 py-0.5 text-foreground/20 text-xs">---</span></td>
+                    <td className="px-3 py-4 text-center w-[80px] border-r border-white/10"><span className="inline-block px-2 py-0.5 text-foreground/20 text-xs">---</span></td>
+                    <td className="px-3 py-4 text-center w-[80px]"><span className="inline-block px-2 py-0.5 text-foreground/20 text-xs">---</span></td>
+                  </tr>
+                  <tr>
+                    <th scope="row" className="sticky left-0 bg-black/20 px-3 py-4 text-left font-medium text-foreground/80 w-[140px] border-r border-white/10">Performance</th>
+                    <td className="px-3 py-4 text-center w-[80px] border-r border-white/10">5</td>
+                    <td className="px-3 py-4 text-center w-[80px] border-r border-white/10">4</td>
+                    <td className="px-3 py-4 text-center w-[80px] border-r border-white/10">3</td>
+                    <td className="px-3 py-4 text-center w-[80px] border-r-2 border-l-2 border-[#2CAC58] bg-[#2CAC58]/10 font-bold">5</td>
+                    <td className="px-3 py-4 text-center w-[80px] border-r border-white/10">4</td>
+                    <td className="px-3 py-4 text-center w-[80px] border-r border-white/10">4</td>
+                    <td className="px-3 py-4 text-center w-[80px]">3</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
-
-            {/* ChatMain wrapper - fill remaining space */}
-            <div style={{
-              flex: 1,
-              minHeight: 0,
-              display: 'flex',
-              flexDirection: 'column'
-            }}>
-              {showChatSplash ? (
-                <div style={{
-                  flex: 1,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}>
-                  <img src="/SimpleDWlogo.svg" alt="Deep Wide Research" width={52} height={52} style={{ opacity: 0.95 }} />
-                </div>
-              ) : (
-                <ChatPanel
-                  key={chatComponentKey}
-                  initialMessages={uiMessages.length > 0 ? uiMessages : undefined}
-                  onSendMessage={handleSendMessage}
-                  placeholder="Ask anything about your research topic..."
-                  researchParams={researchParams}
-                  onResearchParamsChange={setResearchParams}
-                  mcpConfig={mcpConfig}
-                  onMcpConfigChange={setMcpConfig}
-                  style={{ height: '100%' }}
-                />
-              )}
-            </div>
-
-            {/* Composer is managed inside ChatPanel */}
           </div>
+          <p className="mt-2 text-xs text-foreground/40 text-center">Green indicates strong native support; gray × means not supported or not a primary focus.</p>
+          <p className="mt-2 text-xs text-foreground/40 text-center">Names are trademarks of their owners; descriptions are generalized and may change.</p>
+        </section>
+
+        <section id="faq" className="mt-16 md:mt-24">
+          <h2 className="text-[16px] font-semibold tracking-tight text-foreground/50 text-center">Frequently Asked Questions</h2>
+          <p className="mt-4 text-[14px] text-foreground/50 text-center">Everything you need to know about Open Deep Wide Research</p>
+          <div className="mt-12 max-w-3xl mx-auto space-y-3">
+            <details className="group border-2 border-white/20 bg-black/20">
+              <summary className="cursor-pointer list-none flex items-start justify-between text-foreground/90 font-medium text-[12px] px-4 py-3 hover:bg-white/5 transition-colors">
+                <span className="flex items-center gap-2">
+                  <span className="text-foreground/40 group-open:hidden">[+]</span>
+                  <span className="text-foreground/40 hidden group-open:inline">[-]</span>
+                  What is Open Deep Wide Research?
+                </span>
+              </summary>
+              <div className="px-4 pb-3 pt-1 border-t border-white/10 text-[12px] text-foreground/60 leading-relaxed">
+                Open Deep Wide Research is an open-source research tool that lets you control both the depth (how detailed) and width (how broad) of your research. It supports MCP integration, local knowledge bases, and flexible model selection.
+              </div>
+            </details>
+
+            <details className="group border-2 border-white/20 bg-black/20">
+              <summary className="cursor-pointer list-none flex items-start justify-between text-foreground/90 font-medium text-[12px] px-4 py-3 hover:bg-white/5 transition-colors">
+                <span className="flex items-center gap-2">
+                  <span className="text-foreground/40 group-open:hidden">[+]</span>
+                  <span className="text-foreground/40 hidden group-open:inline">[-]</span>
+                  How do depth and width controls work?
+                </span>
+              </summary>
+              <div className="px-4 pb-3 pt-1 border-t border-white/10 text-[12px] text-foreground/60 leading-relaxed">
+                Depth controls how thoroughly we investigate each topic, while width determines how many related topics we explore. You can adjust both parameters to balance between comprehensive analysis and broad coverage.
+              </div>
+            </details>
+
+            <details className="group border-2 border-white/20 bg-black/20">
+              <summary className="cursor-pointer list-none flex items-start justify-between text-foreground/90 font-medium text-[12px] px-4 py-3 hover:bg-white/5 transition-colors">
+                <span className="flex items-center gap-2">
+                  <span className="text-foreground/40 group-open:hidden">[+]</span>
+                  <span className="text-foreground/40 hidden group-open:inline">[-]</span>
+                  What is MCP and why should I use it?
+                </span>
+              </summary>
+              <div className="px-4 pb-3 pt-1 border-t border-white/10 text-[12px] text-foreground/60 leading-relaxed">
+                MCP (Model Context Protocol) lets you connect various data sources and tools to your research workflow. You can integrate Notion, Exa, Tavily, and other services to access your private knowledge bases and specialized search capabilities.
+              </div>
+            </details>
+
+            <details className="group border-2 border-white/20 bg-black/20">
+              <summary className="cursor-pointer list-none flex items-start justify-between text-foreground/90 font-medium text-[12px] px-4 py-3 hover:bg-white/5 transition-colors">
+                <span className="flex items-center gap-2">
+                  <span className="text-foreground/40 group-open:hidden">[+]</span>
+                  <span className="text-foreground/40 hidden group-open:inline">[-]</span>
+                  Can I self-host Open Deep Wide Research?
+                </span>
+              </summary>
+              <div className="px-4 pb-3 pt-1 border-t border-white/10 text-[12px] text-foreground/60 leading-relaxed">
+                Yes! Open Deep Wide Research is fully open-source and can be self-hosted on your own infrastructure. You maintain complete control over your data and can customize the system to your needs.
         </div>
+            </details>
+
+            <details className="group border-2 border-white/20 bg-black/20">
+              <summary className="cursor-pointer list-none flex items-start justify-between text-foreground/90 font-medium text-[12px] px-4 py-3 hover:bg-white/5 transition-colors">
+                <span className="flex items-center gap-2">
+                  <span className="text-foreground/40 group-open:hidden">[+]</span>
+                  <span className="text-foreground/40 hidden group-open:inline">[-]</span>
+                  Which AI models can I use?
+                </span>
+              </summary>
+              <div className="px-4 pb-3 pt-1 border-t border-white/10 text-[12px] text-foreground/60 leading-relaxed">
+                Open Deep Wide Research offers model flexibility - you can use various AI models including OpenAI, Anthropic Claude, open-source models, and more. Choose the model that best fits your needs and budget.
       </div>
+            </details>
+
+            <details className="group border-2 border-white/20 bg-black/20">
+              <summary className="cursor-pointer list-none flex items-start justify-between text-foreground/90 font-medium text-[12px] px-4 py-3 hover:bg-white/5 transition-colors">
+                <span className="flex items-center gap-2">
+                  <span className="text-foreground/40 group-open:hidden">[+]</span>
+                  <span className="text-foreground/40 hidden group-open:inline">[-]</span>
+                  Is my data private and secure?
+                </span>
+              </summary>
+              <div className="px-4 pb-3 pt-1 border-t border-white/10 text-[12px] text-foreground/60 leading-relaxed">
+                When self-hosting, all your data stays on your infrastructure. You have complete control over data storage, processing, and security. No data is sent to third parties unless you explicitly configure external services.
+              </div>
+            </details>
+
+            <details className="group border-2 border-white/20 bg-black/20">
+              <summary className="cursor-pointer list-none flex items-start justify-between text-foreground/90 font-medium text-[12px] px-4 py-3 hover:bg-white/5 transition-colors">
+                <span className="flex items-center gap-2">
+                  <span className="text-foreground/40 group-open:hidden">[+]</span>
+                  <span className="text-foreground/40 hidden group-open:inline">[-]</span>
+                  Who is behind Open Deep Wide Research?
+                </span>
+              </summary>
+              <div className="px-4 pb-3 pt-1 border-t border-white/10 text-sm text-foreground/60 leading-relaxed">
+                Open Deep Wide Research is developed by <a href="https://puppyagent.com" target="_blank" rel="noopener noreferrer" className="text-foreground/80 hover:text-foreground underline">PuppyAgent</a>, an organization dedicated to making advanced research tools accessible to everyone. We believe in open-source principles and building tools that empower researchers, developers, and organizations to conduct thorough, customizable research at scale.
+            </div>
+            </details>
+
+            <details className="group border-2 border-white/20 bg-black/20">
+              <summary className="cursor-pointer list-none flex items-start justify-between text-foreground/90 font-medium text-sm px-4 py-3 hover:bg-white/5 transition-colors">
+                <span className="flex items-center gap-2">
+                  <span className="text-foreground/40 group-open:hidden">[+]</span>
+                  <span className="text-foreground/40 hidden group-open:inline">[-]</span>
+                  How do I get support?
+                </span>
+              </summary>
+              <div className="px-4 pb-3 pt-1 border-t border-white/10 text-[12px] text-foreground/60 leading-relaxed space-y-3">
+                <p><strong className="text-foreground/80">Community Support (Free):</strong></p>
+                <ul className="list-disc list-inside space-y-1 ml-2">
+                  <li>GitHub Issues for bug reports and feature requests</li>
+                  <li>Discord community for real-time discussions</li>
+                  <li>Documentation and tutorials on our website</li>
+                </ul>
+                <p className="mt-3"><strong className="text-foreground/80">Enterprise Support (Paid):</strong></p>
+                <ul className="list-disc list-inside space-y-1 ml-2">
+                  <li>Priority email and Slack support</li>
+                  <li>Dedicated solutions architect</li>
+                  <li>Custom training and onboarding</li>
+                  <li>SLA-backed response times</li>
+                </ul>
+                </div>
+            </details>
+
+            <details className="group border-2 border-white/20 bg-black/20">
+              <summary className="cursor-pointer list-none flex items-start justify-between text-foreground/90 font-medium text-[12px] px-4 py-3 hover:bg-white/5 transition-colors">
+                <span className="flex items-center gap-2">
+                  <span className="text-foreground/40 group-open:hidden">[+]</span>
+                  <span className="text-foreground/40 hidden group-open:inline">[-]</span>
+                  Is there a cloud-hosted version available?
+                </span>
+              </summary>
+              <div className="px-4 pb-3 pt-1 border-t border-white/10 text-[12px] text-foreground/60 leading-relaxed space-y-3">
+                <p>Currently, Open Deep Wide Research is available as an open-source project for self-hosting. We don&apos;t yet offer a cloud-hosted version.</p>
+                <p>If you&apos;re interested in managed hosting, enterprise support, or custom deployment solutions, please reach out to us at <a href="mailto:guantum@puppyagent.com" className="text-foreground/80 hover:text-foreground underline">guantum@puppyagent.com</a>. We&apos;d be happy to discuss your specific needs and explore potential options.</p>
+            </div>
+            </details>
+          </div>
+        </section>
+      </main>
+
+      <div className="mt-24 md:mt-32" aria-hidden="true" />
+      <SiteFooter />
     </div>
   )
 }

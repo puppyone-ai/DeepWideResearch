@@ -1,6 +1,7 @@
 'use client'
 
 import React from 'react'
+import AddSourcePanel from '../../AddSourcePanel'
 
 const LOGOS: Array<{ key: string; logoSrc: string }> = [
   { key: 'notion', logoSrc: '/moreMcpLogo/notion.png' },
@@ -18,18 +19,7 @@ const LOGOS: Array<{ key: string; logoSrc: string }> = [
 ]
 
 export default function InformationSourcesPanel() {
-  const [busy, setBusy] = React.useState(false)
-  const [done, setDone] = React.useState(false)
-  const [err, setErr] = React.useState<string | null>(null)
-
-  const onJoin = () => {
-    const url = 'https://cal.com/guantum/for-users'
-    try {
-      window.location.href = url
-    } catch {
-      try { window.open(url, '_blank', 'noopener') } catch {}
-    }
-  }
+  const [showWaitlistForm, setShowWaitlistForm] = React.useState(false)
 
   return (
     <>
@@ -91,8 +81,7 @@ export default function InformationSourcesPanel() {
               </div>
             </div>
             <button
-              onClick={onJoin}
-              disabled={busy || done}
+              onClick={() => setShowWaitlistForm(true)}
               style={{
                 height: '32px',
                 padding: '0 12px',
@@ -102,23 +91,21 @@ export default function InformationSourcesPanel() {
                 color: '#ffffff',
                 fontWeight: 600,
                 fontSize: '13px',
-                cursor: busy || done ? 'not-allowed' : 'pointer',
+                cursor: 'pointer',
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: '6px',
                 transition: 'background 0.2s ease',
-                boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
-                opacity: busy || done ? 0.7 : 1
+                boxShadow: '0 1px 2px rgba(0,0,0,0.1)'
               }}
-              onMouseEnter={(e) => !busy && !done && (e.currentTarget.style.background = '#2563eb')}
-              onMouseLeave={(e) => !busy && !done && (e.currentTarget.style.background = '#3b82f6')}
+              onMouseEnter={(e) => e.currentTarget.style.background = '#2563eb'}
+              onMouseLeave={(e) => e.currentTarget.style.background = '#3b82f6'}
             >
               <svg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2' strokeLinecap='round' strokeLinejoin='round'>
                 <path d='M12 19V5M5 12l7-7 7 7'/>
               </svg>
-              {busy ? 'Submitting…' : (done ? 'Joined ✓' : 'Join Waitlist')}
+              Join Waitlist
             </button>
-            {err && <div style={{ marginTop: '8px', fontSize: '12px', color: '#ef4444' }}>{err}</div>}
           </div>
 
           {/* Right side - Static Logos Grid */}
@@ -177,7 +164,12 @@ export default function InformationSourcesPanel() {
           }}/>
         </div>
       </div>
+
+      {/* Waitlist Form Modal */}
+      <AddSourcePanel 
+        open={showWaitlistForm} 
+        onClose={() => setShowWaitlistForm(false)} 
+      />
     </>
   )
 }
-

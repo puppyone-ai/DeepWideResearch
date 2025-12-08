@@ -70,7 +70,9 @@ export default function ChatMain({
           gap: '16px',
           borderTopLeftRadius: '16px',
           borderTopRightRadius: '16px',
-          overscrollBehavior: 'contain' as const
+          overscrollBehavior: 'contain' as const,
+          maskImage: 'linear-gradient(to bottom, transparent, black 32px, black calc(100% - 32px), transparent)',
+          WebkitMaskImage: 'linear-gradient(to bottom, transparent, black 32px, black calc(100% - 32px), transparent)'
         }}
         className="puppychat-messages puppychat-history"
       >

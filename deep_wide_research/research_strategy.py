@@ -249,6 +249,12 @@ async def run_research_llm_driven(
     
     if not mcp_tools:
         print("⚠️ No tools available")
+        # Close any clients that were created before returning
+        for client in mcp_clients:
+            try:
+                await client.close()
+            except Exception:
+                pass
         error_json = json.dumps({
             "topic": topic,
             "tool_calls": [],
@@ -261,6 +267,14 @@ async def run_research_llm_driven(
     print(f"✅ Collected {len(mcp_tools)} tool(s):")
     for tool in mcp_tools:
         print(f"  - {tool.get('name', 'unknown')}")
+    
+    # Helper to close clients created by this request
+    async def _close_mcp_clients():
+        for client in mcp_clients:
+            try:
+                await client.close()
+            except Exception:
+                pass
     
     # 2. Build system prompt - dynamically generate using create_unified_research_prompt
     t_prompt_start = time.perf_counter()
@@ -346,6 +360,7 @@ async def run_research_llm_driven(
                 "topic": topic,
                 "tool_calls": tool_interactions,
             }, ensure_ascii=False)
+            await _close_mcp_clients()
             return {
                 "raw_notes": raw_json,
                 "contextjson": contextjson
@@ -354,6 +369,7 @@ async def run_research_llm_driven(
         # Check if ResearchComplete was called
         if any(tc["tool"] == "ResearchComplete" for tc in tool_calls):
             print("\n✅ Research completed by agent")
+            await _close_mcp_clients()
             return {
                 "raw_notes": "\n\n".join([m["content"] for m in conversation_history if m.get("content")]),
                 "contextjson": contextjson
@@ -445,6 +461,7 @@ async def run_research_llm_driven(
         "topic": topic,
         "tool_calls": tool_interactions,
     }, ensure_ascii=False)
+    await _close_mcp_clients()
     return {"raw_notes": raw_json, "contextjson": contextjson}
 
 
