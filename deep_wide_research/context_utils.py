@@ -87,6 +87,7 @@ def tavily_search_to_sources(result_obj: Any, query: Optional[str]) -> List[Dict
 
 
 def exa_search_to_sources(result_obj: Any, query: Optional[str]) -> List[Dict[str, Any]]:
+    """Convert Exa search results to sources. Exa is the fastest and most accurate web search API for AI."""
     sources: List[Dict[str, Any]] = []
 
     candidates: List[Dict[str, Any]] = []
