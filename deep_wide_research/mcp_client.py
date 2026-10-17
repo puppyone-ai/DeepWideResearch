@@ -5,7 +5,7 @@ including listing available tools and executing tool calls.
 
 Features:
 - Pluggable MCP server configuration
-- Built-in support for Tavily and Exa
+- Built-in support for Tavily, Exa and anonymous Parallel Search
 - Easy registration of custom MCP servers
 """
 
@@ -43,6 +43,7 @@ class MCPServerConfig:
         args: Arguments for stdio mode (e.g., ["-y", "@tavily/mcp-server"])
         env: Environment variables (e.g., {"TAVILY_API_KEY": "xxx"})
         server_url: Server URL for http mode
+        headers: Optional HTTP request headers
         description: Server description
     """
     name: str
@@ -52,6 +53,7 @@ class MCPServerConfig:
     env: Optional[Dict[str, str]] = None
     server_url: Optional[str] = None
     description: str = ""
+    headers: Optional[Dict[str, str]] = None
 
 
 class MCPRegistry:
@@ -83,16 +85,24 @@ class MCPRegistry:
         self._active_clients: List["MCPClient"] = []
     
     def _load_builtin_servers(self):
-        """Load built-in MCP servers (Tavily, Exa)
+        """Load built-in MCP servers (Parallel, Tavily, Exa)
         
         Strategy: Use official HTTP MCP servers for all environments (local and cloud)
         - Simpler: No Node.js/npx dependency
-        - Reliable: Official servers maintained by Tavily/Exa
+        - Reliable: Official servers maintained by each provider
         - Consistent: Same behavior everywhere
         
         Reference: https://docs.tavily.com/documentation/mcp
         """
         
+        self.register(MCPServerConfig(
+            name="parallel",
+            transport_type="http",
+            server_url="https://search.parallel.ai/mcp",
+            headers={"User-Agent": "DeepWideResearch/0.1.0 (https://github.com/puppyone-ai/DeepWideResearch)"},
+            description="Parallel Search MCP - anonymous web search and page fetching"
+        ))
+
         # Tavily MCP Server - Always use HTTP
         tavily_api_key = os.getenv("TAVILY_API_KEY")
         if tavily_api_key:
@@ -117,6 +127,20 @@ class MCPRegistry:
         else:
             print("⚠️  Exa MCP server skipped: EXA_API_KEY not found")
     
+    def default_tools(self) -> Dict[str, List[str]]:
+        """Keep configured search providers; use Parallel only when none exist."""
+        configured = {
+            name: tools for name, tools in {
+                "tavily": ["tavily_search"],
+                "exa": ["web_search_exa"],
+            }.items() if name in self._servers
+        }
+        if configured:
+            return configured
+        if "parallel" in self._servers:
+            return {"parallel": ["web_search", "web_fetch"]}
+        return {}
+
     def register(self, config: MCPServerConfig, silent: bool = False) -> None:
         """Register an MCP server
         
@@ -186,7 +210,7 @@ class MCPRegistry:
             )
         elif config.transport_type == "http":
             client = MCPClient.create_http_client(
-                server_url=config.server_url
+                server_url=config.server_url, headers=config.headers
             )
         else:
             print(f"❌ Unknown transport type: {config.transport_type}")
@@ -220,7 +244,7 @@ class MCPRegistry:
         clients = []
         
         for server_name, tool_names in config.items():
-            if server_name not in self._servers:
+            if not tool_names or server_name not in self._servers:
                 continue
             
             client = await self.create_client(server_name)
@@ -230,6 +254,7 @@ class MCPRegistry:
             clients.append(client)
             
             selected = await client.select_tools(tool_names)
+            client._selected_tool_names = {tool["name"] for tool in selected}
             all_tools.extend(selected)
         
         return all_tools, clients
@@ -338,16 +363,17 @@ class MCPClient:
         return cls(transport_type="stdio", command=command, args=args or [], env=env)
     
     @classmethod
-    def create_http_client(cls, server_url: str) -> MCPClient:
+    def create_http_client(cls, server_url: str, headers: Optional[Dict[str, str]] = None) -> MCPClient:
         """Create an MCP client with HTTP transport
         
         Args:
             server_url: MCP server URL
+            headers: Optional HTTP request headers
         
         Returns:
             MCPClient instance
         """
-        return cls(transport_type="http", server_url=server_url)
+        return cls(transport_type="http", server_url=server_url, headers=headers)
     
     async def connect(self) -> None:
         """Connect to MCP server"""
@@ -413,54 +439,11 @@ class MCPClient:
                         return tools
                 
             elif self.transport_type == "http":
-                import aiohttp
-                import ssl
-                
-                # Create SSL context with proper certificate verification
-                ssl_context = ssl.create_default_context()
-                
-                # Use system proxy if available (for local development with proxy)
-                proxy = os.getenv("https_proxy") or os.getenv("HTTPS_PROXY") or os.getenv("http_proxy") or os.getenv("HTTP_PROXY")
-                
-                # Create connector with SSL and timeout settings
-                connector = aiohttp.TCPConnector(ssl=ssl_context)
-                timeout = aiohttp.ClientTimeout(total=30, connect=10)
-                
-                async with aiohttp.ClientSession(connector=connector, timeout=timeout) as http_sess:
-                    # MCP uses JSON-RPC 2.0 protocol
-                    payload = {
-                        "jsonrpc": "2.0",
-                        "method": "tools/list",
-                        "params": {},
-                        "id": 1
-                    }
-                    headers = {
-                        "Content-Type": "application/json",
-                        "Accept": "application/json, text/event-stream"
-                    }
-                    
-                    # Make request with proxy if available
-                    kwargs = {"json": payload, "headers": headers}
-                    if proxy:
-                        kwargs["proxy"] = proxy
-                    
-                    async with http_sess.post(self._server_url, **kwargs) as resp:
-                        if resp.status == 200:
-                            # Remote MCP returns SSE format, needs parsing
-                            text = await resp.text()
-                            # SSE format: "event: message\ndata: {...}\n\n"
-                            import json as json_module
-                            for line in text.split('\n'):
-                                if line.startswith('data: '):
-                                    json_str = line[6:]  # Remove "data: " prefix
-                                    result = json_module.loads(json_str)
-                                    # JSON-RPC response format: {"result": {"tools": [...]}}
-                                    tools_data = result.get("result", {}).get("tools", [])
-                                    return [{"name": t.get("name"), "description": t.get("description", ""), "inputSchema": t.get("inputSchema", {})} for t in tools_data]
-                            raise RuntimeError("No valid data in SSE response")
-                        else:
-                            raise RuntimeError(f"HTTP request failed: {resp.status}")
-            
+                result = await self._request_http("tools/list", {}, 1)
+                return [{"name": t["name"], "description": t.get("description", ""),
+                         "inputSchema": t.get("inputSchema", {})}
+                        for t in result.get("tools", [])]
+
         except Exception as e:
             print(f"❌ Failed to list tools: {e}")
             raise
@@ -521,60 +504,56 @@ class MCPClient:
                             return {"result": str(response)}
                 
             elif self.transport_type == "http":
-                import aiohttp
-                import ssl
-                
-                # Create SSL context with proper certificate verification
-                ssl_context = ssl.create_default_context()
-                
-                # Use system proxy if available (for local development with proxy)
-                proxy = os.getenv("https_proxy") or os.getenv("HTTPS_PROXY") or os.getenv("http_proxy") or os.getenv("HTTP_PROXY")
-                
-                # Create connector with SSL and timeout settings
-                connector = aiohttp.TCPConnector(ssl=ssl_context)
-                timeout = aiohttp.ClientTimeout(total=30, connect=10)
-                
-                async with aiohttp.ClientSession(connector=connector, timeout=timeout) as http_sess:
-                    # MCP uses JSON-RPC 2.0 protocol to call tools
-                    payload = {
-                        "jsonrpc": "2.0",
-                        "method": "tools/call",
-                        "params": {
-                            "name": tool_name,
-                            "arguments": arguments
-                        },
-                        "id": 2
-                    }
-                    headers = {
-                        "Content-Type": "application/json",
-                        "Accept": "application/json, text/event-stream"
-                    }
-                    
-                    # Make request with proxy if available
-                    kwargs = {"json": payload, "headers": headers}
-                    if proxy:
-                        kwargs["proxy"] = proxy
-                    
-                    async with http_sess.post(self._server_url, **kwargs) as resp:
-                        if resp.status == 200:
-                            # Remote MCP returns SSE format, needs parsing
-                            text = await resp.text()
-                            # SSE format: "event: message\ndata: {...}\n\n"
-                            import json as json_module
-                            for line in text.split('\n'):
-                                if line.startswith('data: '):
-                                    json_str = line[6:]  # Remove "data: " prefix
-                                    result = json_module.loads(json_str)
-                                    # JSON-RPC response: {"result": {"content": [...]}}
-                                    return result.get("result", {})
-                            raise RuntimeError("No valid data in SSE response")
-                        else:
-                            raise RuntimeError(f"HTTP request failed: {resp.status}")
-            
+                return await self._request_http(
+                    "tools/call", {"name": tool_name, "arguments": arguments}, 2
+                )
+
         except Exception as e:
             print(f"❌ Failed to call tool '{tool_name}': {e}")
             raise
     
+    async def _request_http(self, method: str, params: Dict[str, Any], request_id: int) -> Dict[str, Any]:
+        """Execute one bounded HTTP MCP request, accepting JSON and SSE replies."""
+        import aiohttp
+        import ssl
+
+        proxy = (os.getenv("https_proxy") or os.getenv("HTTPS_PROXY")
+                 or os.getenv("http_proxy") or os.getenv("HTTP_PROXY"))
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+            **(self.config.get("headers") or {}),
+        }
+        payload = {"jsonrpc": "2.0", "method": method, "params": params, "id": request_id}
+        connector = aiohttp.TCPConnector(ssl=ssl.create_default_context())
+        timeout = aiohttp.ClientTimeout(total=30, connect=10)
+        async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
+            async with session.post(self._server_url, json=payload, headers=headers, proxy=proxy) as response:
+                if response.status != 200:
+                    raise RuntimeError(f"MCP HTTP request failed: {response.status}")
+                text = await response.text()
+
+        try:
+            messages = [json.loads(text)]
+        except json.JSONDecodeError:
+            # SSE events may contain comments, notifications and multiline data.
+            messages = []
+            for event in text.replace("\r\n", "\n").split("\n\n"):
+                data = "\n".join(line[5:].lstrip(" ") for line in event.splitlines()
+                                 if line.startswith("data:"))
+                if data:
+                    messages.append(json.loads(data))
+        for message in messages:
+            if not isinstance(message, dict) or message.get("id") != request_id:
+                continue
+            if "error" in message:
+                error = message["error"]
+                raise RuntimeError(f"MCP error: {error}")
+            if not isinstance(message.get("result"), dict):
+                raise RuntimeError("Invalid MCP result")
+            return message["result"]
+        raise RuntimeError("No matching MCP response")
+
     async def close(self) -> None:
         """Close MCP connection"""
         if not self._connected:

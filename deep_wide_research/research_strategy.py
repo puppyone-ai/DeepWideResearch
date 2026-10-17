@@ -13,6 +13,7 @@ import json
 import re
 import sys
 import time
+import uuid
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 
@@ -22,28 +23,21 @@ try:
     from .providers import chat_complete
     from .mcp_client import get_registry
     from .newprompt import create_unified_research_prompt
-    from .context_utils import extract_sources_from_result, _infer_service_from_tool
+    from .context_utils import extract_sources_from_result, _infer_service_from_tool, parallel_result_errors
 except ImportError:
     # Try absolute import (direct execution or deployment environment)
     try:
         from deep_wide_research.providers import chat_complete
         from deep_wide_research.mcp_client import get_registry
         from deep_wide_research.newprompt import create_unified_research_prompt
-        from deep_wide_research.context_utils import extract_sources_from_result, _infer_service_from_tool
+        from deep_wide_research.context_utils import extract_sources_from_result, _infer_service_from_tool, parallel_result_errors
     except ImportError:
         # Import as standalone module (Railway deployment environment)
         from providers import chat_complete
         from mcp_client import get_registry
         from newprompt import create_unified_research_prompt
-        from context_utils import extract_sources_from_result, _infer_service_from_tool
+        from context_utils import extract_sources_from_result, _infer_service_from_tool, parallel_result_errors
 
-
-# MCP tool selection configuration: {server_name: [tool_names]}
-# Note: HTTP MCP uses underscores in tool names (tavily_search, not tavily-search)
-MCP_TOOLS_CONFIG = {
-    "tavily": ["tavily_search"],  # Fixed: use underscore (HTTP MCP naming)
-    "exa": ["web_search_exa"]
-}
 
 def build_mcp_tools_description(tools: List[Dict[str, Any]]) -> str:
     """Build MCP tool description for insertion into unified_research_prompt
@@ -89,7 +83,10 @@ def build_mcp_tools_description(tools: List[Dict[str, Any]]) -> str:
     
     for param_name, param_info in list(example_props.items())[:2]:
         param_type = param_info.get("type", "string")
-        example_args[param_name] = "example value" if param_type == "string" else (5 if param_type == "integer" else "value")
+        example_args[param_name] = {
+            "string": "example value", "integer": 5, "number": 5,
+            "boolean": True, "array": ["example value"], "object": {},
+        }.get(param_type, "value")
     
     example_json = json.dumps({"tool": example_name, "arguments": example_args}, indent=2)
     
@@ -142,25 +139,41 @@ def parse_tool_calls(content: str) -> List[Dict[str, Any]]:
 async def _execute_single_tool(
     tc: Dict[str, Any],
     mcp_clients: List,
-    cfg
+    cfg,
+    allowed_tools=None,
+    parallel_metadata=None,
 ) -> Dict[str, Any]:
     """Execute a single tool call"""
     result = None
     t_tool_start = time.perf_counter()
-    # Route to the correct client by service name inferred from tool
+    # Route through the advertised selection, including custom servers whose
+    # tool names overlap a built-in provider. Never switch after a failure.
     service = _infer_service_from_tool(tc.get("tool", "")) or ""
-    # Prefer clients whose _server_name matches service; fallback to all
-    ordered_clients = [c for c in mcp_clients if getattr(c, "_server_name", "").lower() == service] or list(mcp_clients)
+    ordered_clients = [c for c in mcp_clients
+                       if tc.get("tool") in getattr(c, "_selected_tool_names", set())]
+    if not ordered_clients:
+        ordered_clients = [c for c in mcp_clients
+                           if not hasattr(c, "_selected_tool_names") and
+                           (not service or getattr(c, "_server_name", "").lower() == service)]
+    resolved_service = service
+    if allowed_tools is not None and tc.get("tool") not in allowed_tools:
+        ordered_clients = []
+        result = json.dumps({"error": f"Tool '{tc.get('tool')}' is not enabled"})
     for client in ordered_clients:
         try:
-            raw = await client.call_tool(tc["tool"], tc.get("arguments", {}))
-            # If the server returned an explicit error marker, try next client
-            if isinstance(raw, dict) and raw.get("isError") is True:
-                continue
+            resolved_service = getattr(client, "_server_name", "") or service
+            arguments = dict(tc.get("arguments", {}))
+            if resolved_service == "parallel" and parallel_metadata:
+                arguments.update(parallel_metadata)
+            raw = await client.call_tool(tc["tool"], arguments)
             result = json.dumps(raw)
-            break  # Stop only when non-error result obtained
-        except Exception:
-            continue  # Try next client on failure
+            break  # Preserve successful results and explicit tool errors.
+        except Exception as exc:
+            # Incumbent/custom URLs may contain credentials. Do not copy their
+            # transport exception text into the model conversation.
+            detail = (str(exc) or type(exc).__name__) if resolved_service == "parallel" else f"{type(exc).__name__}: tool request failed"
+            result = json.dumps({"error": detail})
+            break  # An explicit provider failure must not switch providers.
     
     if result is None:
         result = json.dumps({"error": f"Tool '{tc['tool']}' not found in any MCP server"})
@@ -179,6 +192,7 @@ async def _execute_single_tool(
     return {
         "tool_call_id": tc["id"],
         "tool": tc["tool"],
+        "service": resolved_service,
         "result": result
     }
 
@@ -186,7 +200,9 @@ async def _execute_single_tool(
 async def execute_tool_calls(
     tool_calls: List[Dict[str, Any]],
     mcp_clients: List,
-    cfg
+    cfg,
+    allowed_tools=None,
+    parallel_metadata=None,
 ) -> List[Dict[str, Any]]:
     """Execute all tool calls in parallel and return results list"""
     if not tool_calls:
@@ -195,7 +211,7 @@ async def execute_tool_calls(
     # Execute all tool calls in parallel
     t_exec_start = time.perf_counter()
     tool_results = await asyncio.gather(
-        *[_execute_single_tool(tc, mcp_clients, cfg) for tc in tool_calls]
+        *[_execute_single_tool(tc, mcp_clients, cfg, allowed_tools, parallel_metadata) for tc in tool_calls]
     )
     t_exec_end = time.perf_counter()
     try:
@@ -236,7 +252,7 @@ async def run_research_llm_driven(
     registry = get_registry()
     
     # Use MCP configuration from frontend, or use default if not provided
-    effective_config = mcp_config or MCP_TOOLS_CONFIG
+    effective_config = registry.default_tools() if mcp_config is None else mcp_config
     print(f"📋 Using MCP config: {effective_config}")
     
     mcp_tools, mcp_clients = await registry.collect_tools(effective_config)
@@ -306,6 +322,9 @@ async def run_research_llm_driven(
     conversation_history = []  # Save complete conversation history for final return
     tool_interactions: List[Dict[str, Any]] = []  # Accumulate all tool calls and results (for JSON raw_notes)
     contextjson: Dict[str, Any] = {"sources": []}
+
+    parallel_metadata = {"session_id": uuid.uuid4().hex, "model_name": cfg.research_model}
+    allowed_tools = {tool["name"] for tool in mcp_tools}
 
     # Tool calling loop
     for step in range(max_steps):
@@ -387,7 +406,7 @@ async def run_research_llm_driven(
         
         # Execute all tool calls
         t_tools_start = time.perf_counter()
-        tool_results = await execute_tool_calls(tool_calls, mcp_clients, cfg)
+        tool_results = await execute_tool_calls(tool_calls, mcp_clients, cfg, allowed_tools, parallel_metadata)
         t_tools_end = time.perf_counter()
         try:
             if hasattr(cfg, "_timing_events"):
@@ -400,6 +419,7 @@ async def run_research_llm_driven(
         # Build/extend context from each tool result
         # Maintain simple dedup by (service,url)
         seen = {f"{s.get('service','')}|{s.get('url','')}": True for s in contextjson.get("sources", [])}
+        errors = []
         for tr in tool_results:
             call_id = tr.get("tool_call_id")
             info = call_info_map.get(call_id, {})
@@ -409,12 +429,18 @@ async def run_research_llm_driven(
                 parsed_result: Any = json.loads(result_text)
             except Exception:
                 parsed_result = result_text
+            if isinstance(parsed_result, dict) and (parsed_result.get("error") or parsed_result.get("isError")):
+                errors.append({"tool": tr.get("tool"), "result": parsed_result})
             tool_name = tr.get("tool") or info.get("tool") or ""
             tool_args = info.get("arguments", {}) if isinstance(info.get("arguments", {}), dict) else {}
-            query_val = tool_args.get("query")
-            service = _infer_service_from_tool(tool_name) or "other"
-            # Normalize sources for Tavily/Exa
-            if service in ("tavily", "exa"):
+            query_val = tool_args.get("query") or tool_args.get("objective")
+            service = tr.get("service") or _infer_service_from_tool(tool_name) or "other"
+            if service == "parallel":
+                fetch_errors = parallel_result_errors(parsed_result)
+                if fetch_errors:
+                    errors.append({"tool": tool_name, "errors": fetch_errors})
+            # Normalize sources for supported search providers
+            if service in ("tavily", "exa", "parallel"):
                 try:
                     new_sources = extract_sources_from_result(service, query_val, parsed_result)
                 except Exception:
@@ -422,6 +448,12 @@ async def run_research_llm_driven(
                 for s in new_sources:
                     key = f"{s.get('service','')}|{s.get('url','')}"
                     if key in seen:
+                        if service == "parallel" and tool_name == "web_fetch" and s.get("text"):
+                            existing = next(item for item in contextjson["sources"]
+                                            if f"{item.get('service','')}|{item.get('url','')}" == key)
+                            if s["text"] not in existing.get("text", ""):
+                                existing["text"] = existing.get("text", "") + "\n\n" + s["text"]
+                                existing["snippet"] = existing["text"][:240]
                         continue
                     seen[key] = True
                     contextjson.setdefault("sources", []).append(s)
@@ -431,6 +463,7 @@ async def run_research_llm_driven(
                 "step": step + 1,
                 "id": call_id,
                 "tool": tool_name,
+                "service": service,
                 "arguments": tool_args,
                 "result": parsed_result,
             })
@@ -441,6 +474,8 @@ async def run_research_llm_driven(
 
         # Inject context JSON for LLM instead of raw tool results
         ctx_block = f"<CONTEXT_JSON>\n{json.dumps(contextjson, ensure_ascii=False)}\n</CONTEXT_JSON>"
+        if errors:
+            ctx_block += f"\n<TOOL_ERRORS>\n{json.dumps(errors)}\n</TOOL_ERRORS>"
         messages.append({"role": "user", "content": ctx_block})
         conversation_history.append({"role": "contextjson", "content": ctx_block})
 

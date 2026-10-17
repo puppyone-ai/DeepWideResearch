@@ -95,7 +95,7 @@ The "Deep × Wide" coordinate system also transparently predicts the cost of eac
 - **MCP Protocol Native Support** – Built on the Model Context Protocol for seamless integration with any compliant data source or tool, creating a truly extensible and future-proof agent.
 - **Self-Hosted for Maximum Privacy** – Deploy on your own infrastructure to maintain absolute control over your data and meet the strictest security requirements.
 - **Hot‑Swappable Models** – Plug in OpenAI, Claude, or your private LLM instantly.
-- **Customizable Search Engines** – Integrate any search provider. Tavily and Exa supported out-of-the-box. As long as it supports MCP.
+- **Customizable Search Engines** – Integrate any search provider. Parallel, Tavily and Exa supported out-of-the-box. As long as it supports MCP.
 
 
 
@@ -103,7 +103,7 @@ The "Deep × Wide" coordinate system also transparently predicts the cost of eac
 
 ### Prerequisites
 - Python 3.9+ and Node.js 18+
-- API keys: Open Router (required), and  Exa / Tavily (at least one)
+- API key: OpenRouter (required). Backend API/Python research uses Parallel Search MCP when no Exa or Tavily key is configured.
 - Recommended model: open-o4mini
 
 ### Deployment Options
@@ -123,13 +123,32 @@ cp deep_wide_research/env.example deep_wide_research/.env
 ```bash
 # deep_wide_research/.env
 OPENROUTER_API_KEY=your_key
-# At least one of the following
+# Optional: preserve Tavily/Exa as the default by configuring their keys
 EXA_API_KEY=your_exa_key
 # or
 TAVILY_API_KEY=your_tavily_key
 ```
 
 > You can obtain the Tavily and Exa API keys from their official sites: [Tavily](https://www.tavily.com/) and [Exa](https://exa.ai/).
+
+Backend API and Python callers can search the web and fetch pages with
+[Parallel Search MCP](https://docs.parallel.ai/integrations/mcp/search-mcp)
+without a search account or API key. Anonymous search uses Fast mode and has
+service rate limits. OpenRouter credentials are still required for the model.
+Configured Tavily/Exa keys keep their existing default tools. A failed configured
+provider does not switch to Parallel.
+
+Omit `message.mcp` (or Python's `mcp_config`) to use these defaults. To select
+Parallel explicitly, use:
+
+```json
+{"message": {"query": "Recent advances in battery recycling", "mcp": {"parallel": ["web_search", "web_fetch"]}}}
+```
+
+Use `"mcp": {}` to disable external tools, or select just `web_search` to disable
+page fetching. Explicit service/tool selections are honored even when empty or
+unavailable. The web UI continues to send its Tavily/Exa selections; the new
+keyless default applies to backend API/Python calls that omit the selection.
 
 3. Set up the environment:
 

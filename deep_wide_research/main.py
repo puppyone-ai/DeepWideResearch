@@ -637,7 +637,7 @@ class ResearchMessage(BaseModel):
     """Research message model - includes query and parameters"""
     query: str  # User's query text
     deepwide: DeepWideParams = DeepWideParams()  # Depth/breadth parameter object
-    mcp: Dict[str, List[str]] = {}  # MCP config: {service_name: [tool list]}
+    mcp: Optional[Dict[str, List[str]]] = None  # Omit for defaults; {} disables tools
     thread_id: Optional[str] = None  # Optional: link consumption to a thread
 
 
